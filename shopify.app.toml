@@ -2,7 +2,7 @@
 
 client_id = "604cdb72167f518ad742a4bb1478402e"
 name = "custompayment"
-application_url = "https://example.com"
+application_url = "public.rahulmeghani-prime.workers.dev"
 embedded = true
 
 [access_scopes]
@@ -45,7 +45,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "public.rahulmeghani-prime.workers.dev/api/auth" ]
 
 [build]
 include_config_on_deploy = true
