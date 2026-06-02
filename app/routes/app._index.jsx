@@ -56,6 +56,16 @@ export const action = async ({ request }) => {
     },
   );
   const responseJson = await response.json();
+  console.log(JSON.stringify(responseJson, null, 2));
+  if (!responseJson?.data?.productCreate?.product) {
+  console.error("Product creation failed:", responseJson);
+
+  return {
+    error: responseJson?.data?.productCreate?.userErrors ||
+           responseJson?.errors ||
+           "Unknown error"
+  };
+}
   const product = responseJson.data.productCreate.product;
   const variantId = product.variants.edges[0].node.id;
   const variantResponse = await admin.graphql(
