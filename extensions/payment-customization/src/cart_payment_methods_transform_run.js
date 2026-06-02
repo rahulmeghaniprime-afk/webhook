@@ -15,7 +15,7 @@ const NO_CHANGES = {
 
 // The configured entrypoint for the 'cart.payment-methods.transform.run' extension target
 /**
- * @param {CartPaymentMethodsTransformRunInput} input
+ * @param {CartPaymentMethodsTransformRunInput} input 
  * @returns {CartPaymentMethodsTransformRunResult}
  */
 export function cartPaymentMethodsTransformRun(input) {
