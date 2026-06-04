@@ -5,16 +5,12 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  console.log("Session:", session);
 
   return null;
 };
 
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
-  console.log("Admin client:", admin);
-  console.log("Session:", session);
   const color = ["Red", "Orange", "Yellow", "Green"][
     Math.floor(Math.random() * 4)
   ];
@@ -64,16 +60,7 @@ export const action = async ({ request }) => {
     },
   );
   const responseJson = await response.json();
-  console.log(
-    JSON.stringify(
-      responseJson.data.productCreate.userErrors,
-      null,
-      2
-    )
-  );
-  console.log(JSON.stringify(responseJson, null, 2));
   if (!responseJson?.data?.productCreate?.product) {
-  console.error("Product creation failed:", responseJson);
 
   return {
     error: responseJson?.data?.productCreate?.userErrors ||

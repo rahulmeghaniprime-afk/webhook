@@ -31,7 +31,6 @@ export function cartPaymentMethodsTransformRun(input) {
   }
   const metaField = JSON.parse(input.paymentCustomization.metafield?.value || "{}");
   const hasRestrictedArea = input.cart.deliveryGroups.some(group => group.deliveryAddress?.city?.toLowerCase() === metaField.city?.toLowerCase());
-  console.log("Has restricted area:", hasRestrictedArea);
   if (hasRestrictedArea) {
     return {
       operations: [{
@@ -42,8 +41,6 @@ export function cartPaymentMethodsTransformRun(input) {
     };
   }
   if (cartTotal < 1000) {
-    // You can use debug logs in your function
-    console.error("Cart total is not high enough, no need to hide the payment method.");
     return NO_CHANGES;
   }
   return {
