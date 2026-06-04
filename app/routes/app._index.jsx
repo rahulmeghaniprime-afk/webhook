@@ -41,6 +41,10 @@ export const action = async ({ request }) => {
               jsonValue
             }
           }
+          userErrors {
+            field
+            message
+          }
         }
       }`,
     {
@@ -59,6 +63,13 @@ export const action = async ({ request }) => {
     },
   );
   const responseJson = await response.json();
+  console.log(
+    JSON.stringify(
+      responseJson.data.productCreate.userErrors,
+      null,
+      2
+    )
+  );
   console.log(JSON.stringify(responseJson, null, 2));
   if (!responseJson?.data?.productCreate?.product) {
   console.error("Product creation failed:", responseJson);
