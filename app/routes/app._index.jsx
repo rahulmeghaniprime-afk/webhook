@@ -55,6 +55,7 @@ export const action = async ({ request }) => {
             {
               namespace: "$app",
               key: "demo_info",
+              type: "single_line_text_field",
               value: "Created by React Router Template",
             },
           ],
