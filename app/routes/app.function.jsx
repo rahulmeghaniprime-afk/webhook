@@ -1,6 +1,7 @@
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 
+const APP_KEY = process.env.SHOPIFY_API_KEY;
 const FUNCTION_HANDLE = "payment-customization";
 
 export const loader = async ({ request }) => {
@@ -12,9 +13,14 @@ export const loader = async ({ request }) => {
       paymentCustomizations(first: 250) {
         nodes {
           id
-          title
           enabled
-          functionHandle
+          functionId
+          shopifyFunction{
+            app{
+              handle
+              apiKey
+            }
+          }
         }
       }
     }
@@ -25,7 +31,7 @@ export const loader = async ({ request }) => {
 
   const existingCustomization =
     data?.data?.paymentCustomizations?.nodes?.find(
-      (item) => item.functionHandle === FUNCTION_HANDLE
+      (item) => item.shopifyFunction?.app?.apiKey === APP_KEY
     );
 
   let created = false;
