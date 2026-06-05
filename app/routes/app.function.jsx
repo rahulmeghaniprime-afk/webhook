@@ -121,10 +121,10 @@ export const loader = async ({ request }) => {
     }
   }
 
-  return json({
+  return {
     customizationId,
     created,
-  });
+  };
 };
 
 export default function FunctionPage() {
