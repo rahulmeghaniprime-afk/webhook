@@ -6,6 +6,7 @@ const FUNCTION_HANDLE = "payment-customization";
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
+  console.log("APP_KEY:", APP_KEY);
 
   // Get existing payment customizations
   const query = `
@@ -31,7 +32,7 @@ export const loader = async ({ request }) => {
 
   const existingCustomization =
     data?.data?.paymentCustomizations?.nodes?.find(
-      (item) => item.shopifyFunction?.app?.handle === 'custompayment'
+      (item) => item.shopifyFunction?.app?.apiKey === APP_KEY
     );
 
   let created = false;
