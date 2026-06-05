@@ -31,7 +31,7 @@ export const loader = async ({ request }) => {
 
   const existingCustomization =
     data?.data?.paymentCustomizations?.nodes?.find(
-      (item) => item.shopifyFunction?.app?.handle === 'custompayment2'
+      (item) => item.shopifyFunction?.app?.handle === 'custompayment'
     );
 
   let created = false;
