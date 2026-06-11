@@ -1,4 +1,7 @@
 export default function AdditionalPage() {
+  const openModal = (id) => {
+    shopify.modal.show(id);
+  }
   return (
     <s-page heading="Additional page">
       <s-section heading="Multiple pages">
@@ -32,6 +35,114 @@ export default function AdditionalPage() {
           </s-list-item>
         </s-unordered-list>
       </s-section>
+      <s-button
+        id="open-additional-modal"
+        variant="primary"
+        onClick={() => {openModal("additional-modal")}}
+      >
+        Open modal
+      </s-button>
+      <s-modal id="additional-modal" heading="Additional modal">
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+        <s-paragraph>
+          This is a modal. You can open it by clicking the "Open modal" button
+          in the app navigation.
+        </s-paragraph>
+
+      </s-modal>
     </s-page>
   );
 }
