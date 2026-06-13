@@ -43,104 +43,106 @@ export default function AdditionalPage() {
         Open modal
       </s-button>
       <s-modal id="additional-modal" heading="Additional modal">
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
+        <s-scroll-box overflow="auto hidden" maxBlockSize="300px">
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
 
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
 
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
-        <s-paragraph>
-          This is a modal. You can open it by clicking the "Open modal" button
-          in the app navigation.
-        </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+          <s-paragraph>
+            This is a modal. You can open it by clicking the "Open modal" button
+            in the app navigation.
+          </s-paragraph>
+        </s-scroll-box>
 
       </s-modal>
     </s-page>
