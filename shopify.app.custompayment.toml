@@ -1,19 +1,32 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "ed94570e0d6c1169cead4546251ac4ce"
-name = "custompayment"
 application_url = "https://public-woad-three-38.vercel.app"
 embedded = true
+name = "custompayment"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_metaobject_definitions,write_metaobjects,write_products,write_payment_customizations,read_products"
+scopes = "read_products,write_metaobject_definitions,write_metaobjects,write_payment_customizations,write_products,write_markets,write_payment_customizations,read_publications,write_customers"
 
 [auth]
 redirect_urls = [ "https://public-woad-three-38.vercel.app/api/auth" ]
 
 [webhooks]
 api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/customer"
+  topics = ["customers/delete", "customer.tags_added", "customer.tags_removed"]
+  include_fields = ["tags", "id", "customerId"]
 
 [build]
 automatically_update_urls_on_dev = true

@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = "postgresql://neondb_owner:npg_I3djOBty1NqW@ep-restless-grass-apyb5w9z-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
 }
 
 model Session {
@@ -25,4 +25,14 @@ model Session {
   emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+
+model AppData {
+  id                  String    @id @default(cuid())
+  shop                String
+  key                 String
+  value               String
+
+  @@index([shop], name: "appdata_shop_idx")
 }
