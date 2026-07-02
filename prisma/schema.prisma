@@ -29,10 +29,10 @@ model Session {
 
 
 model AppData {
-  id                  String    @id @default(cuid())
-  shop                String
-  key                 String
-  value               String
+  id         String @id @default(cuid())
+  shop       String
+  customerId BigInt
 
+  @@unique([shop, customerId])
   @@index([shop], name: "appdata_shop_idx")
 }
