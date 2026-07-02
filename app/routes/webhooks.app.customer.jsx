@@ -19,6 +19,10 @@ export const action = async ({request}) => {
                     customerId: BigInt(payload.customerId.split("/").pop()),
                 },
             });
+            await inngest.send({
+                name: "tag.created",
+                data: payload
+            });
         } else if(topic === 'CUSTOMER_TAGS_REMOVED'){
             await prisma.appData.deleteMany({
                 where: {
