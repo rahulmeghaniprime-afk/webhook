@@ -2,7 +2,7 @@
 
 client_id = "604cdb72167f518ad742a4bb1478402e"
 name = "custompayment"
-application_url = "https://public-woad-three-38.vercel.app"
+application_url = "https://https://webhook-kappa.vercel.app"
 embedded = true
 
 [access_scopes]
@@ -45,7 +45,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://public-woad-three-38.vercel.app/api/auth" ]
+redirect_urls = [ "https://https://webhook-kappa.vercel.app/api/auth" ]
 
 [build]
 include_config_on_deploy = true
