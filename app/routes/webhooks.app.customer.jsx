@@ -19,9 +19,16 @@ export const action = async ({request}) => {
                     customerId: BigInt(payload.customerId.split("/").pop()),
                 },
             });
-            await inngest.send({
-                name: "tag.created",
-                data: payload
+            await fetch("https://shopify-worker.rahulmeghani-prime.workers.dev", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    type: "CREATE_B2B",
+                    shop,
+                    customerId,
+                }),
             });
         } else if(topic === 'CUSTOMER_TAGS_REMOVED'){
             await prisma.appData.deleteMany({
