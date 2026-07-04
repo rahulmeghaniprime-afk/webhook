@@ -39,13 +39,39 @@ export const action = async ({request}) => {
                     customerId: BigInt(payload.customerId.split("/").pop()),
                 },
             });
+            await fetch("https://shopify-worker.rahulmeghani-prime.workers.dev", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Worker-Secret": process.env.WORKER_SECRET,
+                },
+                body: JSON.stringify({
+                    type: "REMOVE_B2B",
+                    token:session.accessToken,
+                    shop,
+                    customerId:payload.customerId,
+                }),
+            });
         }
-    } else if(payload?.id){
+    } else if(topic === 'CUSTOMERS_DELETE' && payload?.id){
         await prisma.appData.deleteMany({ 
             where: {
                 shop,
                 customerId: BigInt(payload.id),
             },
+        });
+        await fetch("https://shopify-worker.rahulmeghani-prime.workers.dev", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Worker-Secret": process.env.WORKER_SECRET,
+            },
+            body: JSON.stringify({
+                type: "REMOVE_B2B",
+                token:session.accessToken,
+                shop,
+                customerId:`gid://shopify/Customer/${payload.id}`,
+            }),
         });
     }
     console.log(payload); 

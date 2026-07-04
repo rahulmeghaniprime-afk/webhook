@@ -14,21 +14,21 @@ export default {
       return new Response("Method Not Allowed", { status: 405 });
     }
     const secret = request.headers.get("X-Worker-Secret");
-    console.log("Header:", secret);
-    console.log("Env:", env.WORKER_SECRET);
     if (secret !== env.WORKER_SECRET) {
-      console.log("Secret mismatch");
       return new Response("Unauthorized", { status: 401 });
     }
 
     const body = await request.json();
     if (
-      body.type !== "CREATE_B2B" ||
       !body.shop ||
       !body.customerId ||
       !body.token
     ) {
-      return new Response("Bad Request", { status: 400 });
+      return new Response("Bad Request shop or customerId or token any of this may missing", { status: 400 });
+    }
+    const validTypes = ["CREATE_B2B", "REMOVE_B2B"];
+    if (!validTypes.includes(body.type)) {
+        return new Response("Invalid type", { status: 400 });
     }
 
     ctx.waitUntil(processCustomer(body, env));
@@ -39,10 +39,21 @@ export default {
   },
 };
 
-async function processCustomer(Adata, env) {
-  console.log(Adata);
+async function processCustomer(requestData, env) {
+
   try {
-    await  compnayCreate(Adata);
+    switch (requestData.type) {
+      case "CREATE_B2B":
+          await companyCreate(requestData);
+          break;
+
+      case "REMOVE_B2B":
+          await companyRemove(requestData);
+          break;
+
+      default:
+          throw new Error("Unknown type");
+    }
   } catch (err) {
     console.error(err);
   }
@@ -89,9 +100,9 @@ async function getCompanyContactRoleId(shopDomain, accessToken, companyId, roleN
   return match ? match.node.id : null;
 }
 
-async function compnayCreate(Adata) {
-  const shopDomain = Adata.shop;
-  const accessToken = Adata.token;
+async function companyCreate(requestData) {
+  const shopDomain = requestData.shop;
+  const accessToken = requestData.token;
 
   // 1) companyCreate as you already have
   const companyCreateQuery = `
@@ -100,7 +111,7 @@ async function compnayCreate(Adata) {
         company {
           id
           name
-          locations(first: 5) {
+          locations(first: 3) {
             edges {
               node {
                 id
@@ -124,10 +135,11 @@ async function compnayCreate(Adata) {
   const companyCreateVariables = {
     input: {
       company: {
-        name: "Test Company Created"
+        name: "nx5cworkerOnly",
+        externalId: requestData.customerId,
       },
       companyLocation: {
-        name: "Test Company Location",
+        name: "nx5cworkerOnly Company Location",
         buyerExperienceConfiguration: {
           editableShippingAddress: true
         }
@@ -199,7 +211,7 @@ async function compnayCreate(Adata) {
 
     const assignContactVariables = {
       companyId,
-      customerId: Adata.customerId
+      customerId: requestData.customerId
     };
 
     const assignContactRes = await fetch(
@@ -315,5 +327,106 @@ async function compnayCreate(Adata) {
 
   } catch (err) {
     console.error('Error in compnayCreate flow:', err);
+  }
+}
+
+async function companyRemove(requestData) {
+  const shopDomain = requestData.shop;
+  const accessToken = requestData.token;
+  // --- Step 1: get company ID from customer ID ---
+  const companyID = await getCompanyIdByexternalID(shopDomain, accessToken, requestData.customerId);
+  if(companyID){
+    const companyRemoveQuery = `
+      mutation companyDelete($id: ID!) {
+        companyDelete(id: $id) {
+          deletedCompanyId
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+    const companyRemoveVariable = {
+      "id": companyID
+    };
+    try {
+      const removeRes = await fetch(
+        `https://${shopDomain}/admin/api/2026-07/graphql.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': accessToken
+          },
+          body: JSON.stringify({
+            query: companyRemoveQuery,
+            variables: companyRemoveVariable
+          })
+        }
+      );
+  
+      const getcreatteData = await removeRes.json();
+      const removeCompanyErrors = getcreatteData?.data?.companyDelete?.userErrors;
+      if(removeCompanyErrors){
+        console.error(`Error Deleting companyID${companyID}:`, removeCompanyErrors);
+      }
+      const removedCompanyId = getcreatteData?.data?.companyDelete?.deletedCompanyId;
+      return
+    } catch (err) {
+      console.error('Error Deleting Company:', err);
+    }
+  }
+}
+
+async function getCompanyIdByexternalID(shopDomain, accessToken, customerId) {
+  const compnayFindQuery = `
+    query GetCompany($first:Int,$externalId:String){
+      companies(first:$first,query:$externalId){
+        nodes{
+          id
+        }
+      }
+    }
+  `;
+  const compnayFindVariable = {
+    "first": 5,
+    "externalId": `external_id:${customerId}`
+  };
+  try {
+    // --- Step 1: get company ID from customer ID ---
+    const getcreatteRes = await fetch(
+      `https://${shopDomain}/admin/api/2026-07/graphql.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': accessToken
+        },
+        body: JSON.stringify({
+          query: compnayFindQuery,
+          variables: compnayFindVariable
+        })
+      }
+    );
+
+    const getcreatteData = await getcreatteRes.json();
+
+    const createtErrors = getcreatteData?.data?.companies?.userErrors;
+    if (createtErrors && createtErrors.length > 0) {
+      console.error('companyIDget userErrors:', createtErrors);
+      return;
+    }
+
+    const companies = getcreatteData?.data?.companies?.nodes;
+    const companyId = companies[0]?.id ?? null;
+
+    if(!companyId){
+      console.error('Company not found for external_id:', customerId);
+      return null;
+    }
+    return companyId;
+  } catch (err) {
+    console.error('Error in Getting Company ID From CustomerID (externalID):', err);
   }
 }
