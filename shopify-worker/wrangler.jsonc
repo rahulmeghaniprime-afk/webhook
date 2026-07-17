@@ -9,13 +9,13 @@
 	"compatibility_date": "2026-07-02",
 	"observability": {
 		"logs": {
-			"enabled": true,
-			"invocation_logs": true
+			"enabled": false,
+			"invocation_logs": false
 		},
 		"traces": {
-			"enabled": true,
-			"persist": true,
-			"head_sampling_rate": 1
+			"enabled": false,
+			"persist": false,
+			"head_sampling_rate": 0.02
 		}
 	},
 	"upload_source_maps": true,

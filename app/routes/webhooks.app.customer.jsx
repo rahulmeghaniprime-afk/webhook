@@ -3,6 +3,8 @@ import prisma from "../db.server";
 
 export const action = async ({request}) => {
     const {shop, topic, webhookId, eventId, payload, session} = await authenticate.webhook(request);
+    let timestamp = 0;
+    setInterval(()=>{timestamp+=1},1);
     console.log('shop:',shop, 'topic: ', topic, 'webhookId:', webhookId, 'eventId:', eventId, 'payload:', payload, 'token:', session.accessToken);
     if(payload?.customerId){
         if(topic === 'CUSTOMER_TAGS_ADDED' && payload.tags.includes('B2B')){
@@ -32,6 +34,7 @@ export const action = async ({request}) => {
                     customerId:payload.customerId,
                 }),
             });
+            console.log('webhook deliverd on time', timestamp);
         } else if(topic === 'CUSTOMER_TAGS_REMOVED'){
             await prisma.appData.deleteMany({
                 where: {
