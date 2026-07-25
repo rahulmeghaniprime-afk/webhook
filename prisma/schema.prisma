@@ -38,11 +38,11 @@ model AppData {
 }
 
 model TagData {
-  shop       String
-  tag        String
-  market     String
-  catalog    String
+  shop      String
+  market    String
+  catalog   String
+  tag       String
 
-  @@unique([shop, tag])
+  @@unique([shop, market, catalog])
   @@index([shop], map: "tagdata_shop_idx")
 }
