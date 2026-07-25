@@ -7,6 +7,7 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
+import { neon } from "@neondatabase/serverless";
 
 export default {
   async fetch(request, env, ctx) {
@@ -26,9 +27,9 @@ export default {
     ) {
       return new Response("Bad Request shop or customerId or token any of this may missing", { status: 400 });
     }
-    const validTypes = ["CREATE_B2B", "REMOVE_B2B"];
+    const validTypes = ["CREATE_B2B", "REMOVE_B2B", "CUSTOMER_DELETED"];
     if (!validTypes.includes(body.type)) {
-        return new Response("Invalid type", { status: 400 });
+      return new Response("Invalid type", { status: 400 });
     }
 
     ctx.waitUntil(processCustomer(body, env));
@@ -40,19 +41,55 @@ export default {
 };
 
 async function processCustomer(requestData, env) {
-
+  const sql = neon(env.DATABASE_URL);
   try {
+    const shopDomain = requestData.shop;
+    const accessToken = requestData.token;
+    const customerId = requestData.customerId
     switch (requestData.type) {
       case "CREATE_B2B":
-          await companyCreate(requestData);
-          break;
+        const companySync = await companyCreate(shopDomain, accessToken, customerId);
+        if (companySync === 'fully add sync') {
+          await sql`
+            INSERT INTO "AppData" ("id", "shop", "customerId")
+            VALUES (${crypto.randomUUID()}, ${requestData.shop}, ${BigInt(requestData.customerId.split('/').at(-1))})
+            ON CONFLICT ("shop", "customerId") DO NOTHING
+          `;
+        }
+        break;
 
       case "REMOVE_B2B":
-          await companyRemove(requestData);
-          break;
+        const removeSync = await companyRemove(shopDomain, accessToken, customerId);
+        if (removeSync === "fully remove sync") {
+          await sql`
+            DELETE FROM "AppData"
+            WHERE shop = ${requestData.shop}
+            AND "customerId" = ${BigInt(requestData.customerId.split('/').at(-1))}
+          `;
+        }
+        break;
 
+      case "CUSTOMER_DELETED":
+        const b2bCustomer = await sql`
+          SELECT "tag"
+          FROM "AppData"
+          WHERE shop = ${requestData.shop}
+          AND "customerId" = ${BigInt(requestData.customerId.split('/').at(-1))}
+        `;
+        const isTag = b2bCustomer.length;
+        if(isTag){
+          const removeSync = await companyRemove(shopDomain, accessToken, customerId);
+          if (removeSync === "fully remove sync") {
+            await sql`
+              DELETE FROM "AppData"
+              WHERE shop = ${requestData.shop}
+              AND "customerId" = ${BigInt(requestData.customerId.split('/').at(-1))}
+            `;
+          }
+        }
+        break;
       default:
-          throw new Error("Unknown type");
+        throw new Error("Unknown type");
     }
   } catch (err) {
     console.error(err);
@@ -100,9 +137,7 @@ async function getCompanyContactRoleId(shopDomain, accessToken, companyId, roleN
   return match ? match.node.id : null;
 }
 
-async function companyCreate(requestData) {
-  const shopDomain = requestData.shop;
-  const accessToken = requestData.token;
+async function companyCreate(shopDomain, accessToken, customerId) {
 
   // 1) companyCreate as you already have
   const companyCreateQuery = `
@@ -136,7 +171,7 @@ async function companyCreate(requestData) {
     input: {
       company: {
         name: "nx5cworkerOnly",
-        externalId: requestData.customerId,
+        externalId: customerId,
       },
       companyLocation: {
         name: "nx5cworkerOnly Company Location",
@@ -180,7 +215,7 @@ async function companyCreate(requestData) {
 
     if (!companyId || !companyLocationId) {
       console.error('Missing companyId or companyLocationId, cannot continue.');
-      return;
+      return JSON.stringify(createData);
     }
 
     // --- Step 2: assign existing customer as contact ---
@@ -211,7 +246,7 @@ async function companyCreate(requestData) {
 
     const assignContactVariables = {
       companyId,
-      customerId: requestData.customerId
+      customerId: customerId
     };
 
     const assignContactRes = await fetch(
@@ -245,7 +280,7 @@ async function companyCreate(requestData) {
 
     if (!companyContactId) {
       console.error('Missing companyContactId, cannot assign role.');
-      return;
+      return JSON.stringify(assignContactData);
     }
 
     // --- Step 3: fetch actual role ID (e.g. "Ordering only") ---
@@ -261,7 +296,7 @@ async function companyCreate(requestData) {
 
     if (!companyContactRoleId) {
       console.error(`Role "${roleNameToFind}" not found for this company.`);
-      return;
+      return `Role "${roleNameToFind}" not found for ${companyId} company.`;
     }
 
     // --- Step 4: assign that role to the contact at the location ---
@@ -320,22 +355,20 @@ async function companyCreate(requestData) {
 
     const assignRoleErrors =
       assignRoleData?.data?.companyContactAssignRole?.userErrors;
-    if (assignRoleErrors && assignRoleErrors.length > 0) {
+    if ((assignRoleErrors && assignRoleErrors.length > 0) || !assignRoleData?.data) {
       console.error('companyContactAssignRole userErrors:', assignRoleErrors);
-      return;
+      return JSON.stringify(assignRoleData);
     }
-
+    return "fully add sync";
   } catch (err) {
     console.error('Error in compnayCreate flow:', err);
   }
 }
 
-async function companyRemove(requestData) {
-  const shopDomain = requestData.shop;
-  const accessToken = requestData.token;
+async function companyRemove(shopDomain, accessToken, customerId) {
   // --- Step 1: get company ID from customer ID ---
-  const companyID = await getCompanyIdByexternalID(shopDomain, accessToken, requestData.customerId);
-  if(companyID){
+  const companyID = await getCompanyIdByexternalID(shopDomain, accessToken, customerId);
+  if (companyID) {
     const companyRemoveQuery = `
       mutation companyDelete($id: ID!) {
         companyDelete(id: $id) {
@@ -365,17 +398,21 @@ async function companyRemove(requestData) {
           })
         }
       );
-  
+
       const getcreatteData = await removeRes.json();
       const removeCompanyErrors = getcreatteData?.data?.companyDelete?.userErrors;
-      if(removeCompanyErrors){
-        console.error(`Error Deleting companyID${companyID}:`, removeCompanyErrors);
+      if (removeCompanyErrors.length || !getcreatteData?.data) {
+        console.error(`Error Deleting companyID ${companyID} :`, JSON.stringify(getcreatteData));
+        return JSON.stringify(getcreatteData);
       }
       const removedCompanyId = getcreatteData?.data?.companyDelete?.deletedCompanyId;
-      return
+      return "fully remove sync";
     } catch (err) {
       console.error('Error Deleting Company:', err);
+      return "'Error Deleting Company:'";
     }
+  } else {
+    return `while removing externalID in company not found for customer ${customerId}`
   }
 }
 
@@ -421,7 +458,7 @@ async function getCompanyIdByexternalID(shopDomain, accessToken, customerId) {
     const companies = getcreatteData?.data?.companies?.nodes;
     const companyId = companies[0]?.id ?? null;
 
-    if(!companyId){
+    if (!companyId) {
       console.error('Company not found for external_id:', customerId);
       return null;
     }

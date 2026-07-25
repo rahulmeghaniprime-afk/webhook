@@ -31,7 +31,18 @@ model AppData {
   id         String @id @default(cuid())
   shop       String
   customerId BigInt
+  tag        String
 
   @@unique([shop, customerId])
   @@index([shop], map: "appdata_shop_idx")
+}
+
+model TagData {
+  shop       String
+  tag        String
+  market     String
+  catalog    String
+
+  @@unique([shop, tag])
+  @@index([shop], map: "tagdata_shop_idx")
 }
