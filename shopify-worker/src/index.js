@@ -7,7 +7,6 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-import { neon } from "@neondatabase/serverless";
 
 export default {
   async fetch(request, env, ctx) {
@@ -41,52 +40,22 @@ export default {
 };
 
 async function processCustomer(requestData, env) {
-  const sql = neon(env.DATABASE_URL);
   try {
     const shopDomain = requestData.shop;
     const accessToken = requestData.token;
-    const customerId = requestData.customerId
+    const customerId = requestData.customerId;
+    const market_catalog = requestData.market_catalog;
     switch (requestData.type) {
       case "CREATE_B2B":
-        const companySync = await companyCreate(shopDomain, accessToken, customerId);
-        if (companySync === 'fully add sync') {
-          await sql`
-            INSERT INTO "AppData" ("id", "shop", "customerId")
-            VALUES (${crypto.randomUUID()}, ${requestData.shop}, ${BigInt(requestData.customerId.split('/').at(-1))})
-            ON CONFLICT ("shop", "customerId") DO NOTHING
-          `;
-        }
+        const companySync = await companyCreate(shopDomain, accessToken, customerId, market_catalog);
         break;
 
       case "REMOVE_B2B":
         const removeSync = await companyRemove(shopDomain, accessToken, customerId);
-        if (removeSync === "fully remove sync") {
-          await sql`
-            DELETE FROM "AppData"
-            WHERE shop = ${requestData.shop}
-            AND "customerId" = ${BigInt(requestData.customerId.split('/').at(-1))}
-          `;
-        }
         break;
 
       case "CUSTOMER_DELETED":
-        const b2bCustomer = await sql`
-          SELECT "tag"
-          FROM "AppData"
-          WHERE shop = ${requestData.shop}
-          AND "customerId" = ${BigInt(requestData.customerId.split('/').at(-1))}
-        `;
-        const isTag = b2bCustomer.length;
-        if(isTag){
-          const removeSync = await companyRemove(shopDomain, accessToken, customerId);
-          if (removeSync === "fully remove sync") {
-            await sql`
-              DELETE FROM "AppData"
-              WHERE shop = ${requestData.shop}
-              AND "customerId" = ${BigInt(requestData.customerId.split('/').at(-1))}
-            `;
-          }
-        }
+          const deletSync = await companyRemove(shopDomain, accessToken, customerId);
         break;
       default:
         throw new Error("Unknown type");
@@ -102,7 +71,7 @@ async function getCompanyContactRoleId(shopDomain, accessToken, companyId, roleN
       company(id: $id) {
         id
         name
-        contactRoles(first: 5) {
+        contactRoles(first: 50) {
           edges {
             node {
               id
@@ -137,7 +106,7 @@ async function getCompanyContactRoleId(shopDomain, accessToken, companyId, roleN
   return match ? match.node.id : null;
 }
 
-async function companyCreate(shopDomain, accessToken, customerId) {
+async function companyCreate(shopDomain, accessToken, customerId, market_catalog) {
 
   // 1) companyCreate as you already have
   const companyCreateQuery = `
@@ -358,6 +327,67 @@ async function companyCreate(shopDomain, accessToken, customerId) {
     if ((assignRoleErrors && assignRoleErrors.length > 0) || !assignRoleData?.data) {
       console.error('companyContactAssignRole userErrors:', assignRoleErrors);
       return JSON.stringify(assignRoleData);
+    }
+    const marketAssignquery = `mutation AddCompanyLocationToMarket($marketId: ID!, $companyLocationId: ID!) {
+      marketUpdate(
+        id: $marketId
+        input: {
+          conditions: {
+            conditionsToAdd: {
+              companyLocationsCondition: {
+                companyLocationIds: [$companyLocationId]
+              }
+            }
+          }
+        }
+      ) {
+        market {
+          id
+          handle
+          status
+          conditions {
+            companyLocationsCondition {
+              companyLocations(first: 2) {
+                edges {
+                  node {
+                    id
+                  }
+                }
+              }
+            }
+          }
+        }
+        userErrors {
+          field
+          message
+          code
+        }
+      }
+    }`;
+    const marketId = market_catalog.market;
+    const marketVariable = {
+      marketId,
+      companyLocationId
+    }
+    const marketRes = await fetch(`https://${shopDomain}/admin/api/2026-07/graphql.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': accessToken
+        },
+        body: JSON.stringify({
+          query: marketAssignquery,
+          variables: marketVariable
+        })
+      });
+    const marketData = await marketRes.json();
+    const marketAdded = marketData?.data?.marketUpdate?.market?.id;
+    if(!marketAdded){
+      const assignMarketErrors =
+      marketData?.data?.marketUpdate?.userErrors;
+      console.error('marketAssign Error userErrors:', JSON.stringify(assignMarketErrors));
+      return JSON.stringify(marketData);
     }
     return "fully add sync";
   } catch (err) {

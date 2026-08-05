@@ -1,12 +1,30 @@
 import { authenticate } from "../shopify.server";
 
 export const action = async ({request}) => {
-    const {shop, topic, webhookId, eventId, payload, session} = await authenticate.webhook(request);
+    const {shop, topic, webhookId, eventId, payload, session, admin} = await authenticate.webhook(request);
+    const metaRes = await admin.graphql(`
+        #graphql
+        query {
+        shop {
+            metafield(namespace: "custom", key: "store_tags") {
+            jsonValue
+            }
+        }
+        }
+    `);
+    const metafieldData = await metaRes.json();
+    const storedSyncData  = metafieldData?.data?.shop?.metafield?.jsonValue || {};
+    const storeTags = [];
+    for(let i in (storedSyncData || {})){
+        storeTags.push(storedSyncData[i]);
+    }
+    const market_catalog = storeTags.find(mObj => payload.tags.includes(mObj.tag));
     let timestamp = 0;
     setInterval(()=>{timestamp+=1},1);
     console.log('shop:',shop, 'topic: ', topic, 'webhookId:', webhookId, 'eventId:', eventId, 'payload:', payload, 'token:', session.accessToken);
     if(payload?.customerId){
-        if(topic === 'CUSTOMER_TAGS_ADDED' && payload.tags.includes('B2B')){
+        if(topic === 'CUSTOMER_TAGS_ADDED' && market_catalog){
+            console.log(market_catalog)
             await fetch("https://shopify-worker.rahulmeghani-prime.workers.dev", {
                 method: "POST",
                 headers: {
@@ -17,11 +35,12 @@ export const action = async ({request}) => {
                     type: "CREATE_B2B",
                     token:session.accessToken,
                     shop,
+                    market_catalog,
                     customerId:payload.customerId,
                 }),
             });
             console.log('webhook deliverd on time', timestamp);
-        } else if(topic === 'CUSTOMER_TAGS_REMOVED'){
+        } else if(topic === 'CUSTOMER_TAGS_REMOVED' && market_catalog){
             await fetch("https://shopify-worker.rahulmeghani-prime.workers.dev", {
                 method: "POST",
                 headers: {
@@ -32,6 +51,7 @@ export const action = async ({request}) => {
                     type: "REMOVE_B2B",
                     token:session.accessToken,
                     shop,
+                    market_catalog,
                     customerId:payload.customerId,
                 }),
             });
