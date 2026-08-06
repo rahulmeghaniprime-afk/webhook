@@ -3,6 +3,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import TawkChat from "../component/TawkChat";
+import Crispt from "../component/Crispt";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
@@ -22,7 +23,8 @@ export default function App() {
         <s-link href="/app/function">Function</s-link>
       </ui-nav-menu>
       <Outlet />
-      <TawkChat />
+      {/* <TawkChat /> */}
+      <Crispt />
     </AppProvider>
   );
 }
