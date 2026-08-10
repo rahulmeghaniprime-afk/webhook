@@ -92,7 +92,7 @@ async function getProduct(id){
  */
 
 function Extension({product}) {
-  const {i18n, data, extension: {target}} = shopify;
+  const { data, extension: {target}} = shopify;
   console.log({data},{product});
   const [price, setPrice] = useState((product?.variants.nodes[0]?.metafield?.value) ? product.variants.nodes[0].metafield.value : '');
   const [loading, setLoading] = useState(false);
@@ -130,7 +130,7 @@ function Extension({product}) {
   return (
     <s-admin-block heading="B2B (Wholesale Pricing) Extension">
       <s-stack direction="block">
-        <s-text type="strong">{i18n.translate('first_variant_heading')}</s-text>
+        <s-text type="strong">First Variant</s-text>
         {/* {product?.variants?.nodes?.length  && product.variants.nodes.map(variant => <Variant variant={variant}/>)} */}
         <Variant variant={product.variants.nodes[0]} price={price} setPrice={setPrice}/>
         <s-grid gap="base" justifyContent="end" padding="base base none base" gridTemplateColumns="auto auto">
