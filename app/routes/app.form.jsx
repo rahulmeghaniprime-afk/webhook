@@ -25,7 +25,7 @@ export default function Form() {
         <s-page>
             <s-section>
                 <s-box>
-                    <p style={{textAlign: 'center'}}>Create B2B Form And add Tag</p>
+                    <p style={{textAlign: 'center'}}>Create B2B Form And add Tag Define in app to directly add compnay or customer to market</p>
                     <s-grid alignItems="center" justifyContent="center">
                         <s-button onClick={redirectFormapp} variant="primary">Create Form</s-button>
                     </s-grid>
