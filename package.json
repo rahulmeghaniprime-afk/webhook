@@ -36,6 +36,7 @@
     "crisp-sdk-web": "^1.2.0",
     "isbot": "^5.1.31",
     "prisma": "^6.16.3",
+    "quill": "^2.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-quill-new": "^3.8.3",
