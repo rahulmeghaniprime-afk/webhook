@@ -7,7 +7,7 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_metaobjects,write_metaobject_definitions,write_payment_customizations,write_markets"
+scopes = "write_products,write_metaobjects,write_metaobject_definitions,write_payment_customizations,write_markets,write_app_proxy"
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
@@ -50,3 +50,8 @@ redirect_urls = [ "https://https://webhook-kappa.vercel.app/api/auth" ]
 [build]
 include_config_on_deploy = true
 automatically_update_urls_on_dev = true
+
+[app_proxy]
+url = "/b2b-form"
+prefix = "b2b"
+subpath = "wholesale-form"

@@ -38,11 +38,67 @@ model AppData {
 }
 
 model TagData {
-  shop      String
-  market    String
-  catalog   String
-  tag       String
+  shop    String
+  market  String
+  catalog String
+  tag     String
 
   @@unique([shop, market, catalog])
   @@index([shop], map: "tagdata_shop_idx")
+}
+
+model FieldMapping {
+  id            String @id
+  formId        String
+  fieldId       String
+  fieldLabel    String
+  fieldType     String
+  metaobjectKey String
+  Form          Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+}
+
+model Form {
+  id              String           @id
+  shop            String
+  name            String
+  html            String
+  css             String
+  metaobjectType  String
+  metaobjectDefId String
+  createdAt       DateTime         @default(now())
+  FieldMapping    FieldMapping[]
+  formSubmissions FormSubmission[]
+}
+
+model ProcessedEvent {
+  eventId   String    @id @db.VarChar(255)
+  createdAt DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([createdAt], map: "idx_processed_event_created_at")
+}
+
+model Submission {
+  id         String   @id
+  formId     String
+  shop       String
+  customerId String?
+  payload    String
+  createdAt  DateTime @default(now())
+}
+
+model FormSubmission {
+  id           String   @id @default(cuid())
+  formId       String
+  shop         String
+  customerId   String?
+  payload      String // JSON blob of submitted values, for auditing/retry
+  status       String // "pending" | "created" | "failed"
+  metaobjectId String?
+  error        String?
+  createdAt    DateTime @default(now())
+
+  form Form @relation(fields: [formId], references: [id])
+
+  @@index([formId])
+  @@index([shop])
 }

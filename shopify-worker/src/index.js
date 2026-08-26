@@ -31,38 +31,38 @@ export default {
       return new Response("Invalid type", { status: 400 });
     }
 
-    ctx.waitUntil(processCustomer(body, env));
+    // ctx.waitUntil(processCustomer(body, env));
 
-    return new Response("OK", {
-      status: 202,
-    });
+    // return new Response("OK", {
+    //   status: 202,
+    // });
+
+    try {
+      await processCustomer(body, env);
+      return new Response("Processed successfully", { status: 200 });
+    } catch (error) {
+      console.error("Error processing customer:", error);
+      return new Response(`Internal Error: ${error.message || 'Processing failed'}`, { status: 500 });
+    }
   },
 };
 
 async function processCustomer(requestData, env) {
-  try {
-    const shopDomain = requestData.shop;
-    const accessToken = requestData.token;
-    const customerId = requestData.customerId;
-    const market_catalog = requestData.market_catalog;
-    switch (requestData.type) {
-      case "CREATE_B2B":
-        const companySync = await companyCreate(shopDomain, accessToken, customerId, market_catalog);
-        break;
 
-      case "REMOVE_B2B":
-        const removeSync = await companyRemove(shopDomain, accessToken, customerId);
-        break;
-
-      case "CUSTOMER_DELETED":
-          const deletSync = await companyRemove(shopDomain, accessToken, customerId);
-        break;
-      default:
-        throw new Error("Unknown type");
-    }
-  } catch (err) {
-    console.error(err);
+  const shopDomain = requestData.shop;
+  const accessToken = requestData.token;
+  const customerId = requestData.customerId;
+  const market_catalog = requestData.market_catalog;
+  switch (requestData.type) {
+    case "CREATE_B2B":
+      return await companyCreate(shopDomain, accessToken, customerId, market_catalog);
+    case "REMOVE_B2B":
+    case "CUSTOMER_DELETED":
+      return await companyRemove(shopDomain, accessToken, customerId);
+    default:
+      throw new Error(`Unknown type: ${requestData.type}`);
   }
+
 }
 
 async function getCompanyContactRoleId(shopDomain, accessToken, companyId, roleNameToFind) {
@@ -139,11 +139,11 @@ async function companyCreate(shopDomain, accessToken, customerId, market_catalog
   const companyCreateVariables = {
     input: {
       company: {
-        name: "nx5cworkerOnly",
+        name: "B2B",
         externalId: customerId,
       },
       companyLocation: {
-        name: "nx5cworkerOnly Company Location",
+        name: "B2B Company Location",
         buyerExperienceConfiguration: {
           editableShippingAddress: true
         }
@@ -383,9 +383,9 @@ async function companyCreate(shopDomain, accessToken, customerId, market_catalog
       });
     const marketData = await marketRes.json();
     const marketAdded = marketData?.data?.marketUpdate?.market?.id;
-    if(!marketAdded){
+    if (!marketAdded) {
       const assignMarketErrors =
-      marketData?.data?.marketUpdate?.userErrors;
+        marketData?.data?.marketUpdate?.userErrors;
       console.error('marketAssign Error userErrors:', JSON.stringify(assignMarketErrors));
       return JSON.stringify(marketData);
     }
@@ -431,7 +431,7 @@ async function companyRemove(shopDomain, accessToken, customerId) {
 
       const getcreatteData = await removeRes.json();
       const removeCompanyErrors = getcreatteData?.data?.companyDelete?.userErrors;
-      if (removeCompanyErrors.length || !getcreatteData?.data) {
+      if (removeCompanyErrors?.length || !getcreatteData?.data) {
         console.error(`Error Deleting companyID ${companyID} :`, JSON.stringify(getcreatteData));
         return JSON.stringify(getcreatteData);
       }
@@ -458,7 +458,7 @@ async function getCompanyIdByexternalID(shopDomain, accessToken, customerId) {
   `;
   const compnayFindVariable = {
     "first": 5,
-    "externalId": `external_id:${customerId}`
+    "externalId": `external_id:"${customerId}"`
   };
   try {
     // --- Step 1: get company ID from customer ID ---
