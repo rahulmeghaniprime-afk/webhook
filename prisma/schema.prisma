@@ -48,13 +48,14 @@ model TagData {
 }
 
 model FieldMapping {
-  id            String @id
+  id            String  @id @default(cuid())
   formId        String
   fieldId       String
   fieldLabel    String
   fieldType     String
   metaobjectKey String
-  Form          Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  required      Boolean @default(false)
+  Form          Form    @relation(fields: [formId], references: [id], onDelete: Cascade)
 }
 
 model Form {

@@ -1,6 +1,5 @@
 import { useLoaderData, useSubmit, useActionData, useNavigation, useNavigate } from "react-router";
-import { useState, useEffect } from "react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useState, useEffect, useRef } from "react";
 import { authenticate } from "../shopify.server";
 import RichTextEditor from '../component/RichTextEditor';
 import db from "../db.server";
@@ -8,8 +7,11 @@ import db from "../db.server";
 // ============================================================================
 // 1. HELPER: MAP ALL FIELD TYPES TO SHOPIFY METAOBJECT FIELD TYPE STRINGS
 // ============================================================================
-function mapToShopifyMetaobjectType(fieldType) {
-    switch (fieldType) {
+function mapToShopifyMetaobjectType(field) {
+    const type = typeof field === "string" ? field : field?.type;
+    const isMultiple = typeof field === "object" && Boolean(field?.multiple);
+
+    switch (type) {
         case "number":
             return "number_integer";
         case "date":
@@ -19,7 +21,7 @@ function mapToShopifyMetaobjectType(fieldType) {
         case "checkbox_group":
             return "list.single_line_text_field";
         case "file":
-            return "file_reference";
+            return isMultiple ? "list.file_reference" : "file_reference";
         case "email":
         case "text":
         case "select":
@@ -35,24 +37,34 @@ function mapToShopifyMetaobjectType(fieldType) {
 // ============================================================================
 function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel, policies) {
     const css = `
-    .b2b-form-wrapper { max-width: 600px; margin: 0 auto; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff; border: 1px solid #e1e3e5; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+    .b2b-form-wrapper { max-width: 600px; margin: 0 auto; padding: 28px 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff; border: 1px solid #e1e3e5; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
     .b2b-form-title { font-size: 22px; font-weight: 700; color: #1a1a1a; text-align: center; margin: 0 0 8px 0; }
     .b2b-form-desc { font-size: 13px; color: #6d6d6d; text-align: center; margin: 0 0 20px 0; line-height: 1.5; }
     .b2b-form-desc p { margin: 0; }
     .b2b-field-group { margin-bottom: 16px; }
     .b2b-label { display: block; font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 6px; }
     .b2b-required-star { color: #c0392b; margin-left: 2px; }
-    .b2b-input, .b2b-select, .b2b-textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; border: 1px solid #d5d5d5; border-radius: 6px; background: #fafafa; color: #1a1a1a; font-family: inherit; }
+    .b2b-input, .b2b-select, .b2b-textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 13px; border: 1px solid #d5d5d5; border-radius: 6px; background: #fafafa; color: #1a1a1a; font-family: inherit; transition: border-color 0.2s, box-shadow 0.2s; }
+    .b2b-input:focus, .b2b-select:focus, .b2b-textarea:focus { outline: none; border-color: #1a1a1a; box-shadow: 0 0 0 1px #1a1a1a; background: #ffffff; }
     .b2b-textarea { resize: vertical; min-height: 80px; }
-    .b2b-choice-group { display: flex; flex-direction: column; gap: 8px; }
-    .b2b-choice-label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #1a1a1a; cursor: pointer; padding: 8px 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; width: fit-content; }
+    .b2b-choice-group { display: flex; flex-direction: row; gap: 8px; flex-wrap:wrap; }
+    .b2b-choice-label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #1a1a1a; cursor: pointer; padding: 8px 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; width: fit-content; transition: background 0.15s; }
+    .b2b-choice-label:hover { background: #f0f0f0; }
     .b2b-radio-input, .b2b-checkbox-input { width: 16px; height: 16px; accent-color: #1a1a1a; cursor: pointer; }
-    .b2b-file-dropzone { border: 2px dashed #d0d0d0; border-radius: 8px; padding: 20px; text-align: center; background: #fafafa; position: relative; cursor: pointer; }
+    .b2b-file-dropzone { border: 2px dashed #d0d0d0; border-radius: 8px; padding: 20px; text-align: center; background: #fafafa; position: relative; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+    .b2b-file-dropzone:hover { border-color: #1a1a1a; background: #f5f5f5; }
     .b2b-file-input { width: 100%; cursor: pointer; }
-    .b2b-submit-btn { display: block; width: 100%; background: #1a1a1a; color: #ffffff; border: none; border-radius: 6px; padding: 12px 20px; font-size: 14px; font-weight: 600; text-align: center; cursor: pointer; margin-top: 20px; }
+    .b2b-file-help { font-size: 11px; color: #888; margin-top: 6px; }
+    .b2b-submit-btn { display: block; width: 100%; background: #1a1a1a; color: #ffffff; border: none; border-radius: 6px; padding: 12px 20px; font-size: 14px; font-weight: 600; text-align: center; cursor: pointer; margin-top: 20px; transition: background 0.15s; }
     .b2b-submit-btn:hover { background: #333333; }
     .b2b-policy-text { font-size: 11px; color: #999999; text-align: center; margin-top: 14px; line-height: 1.5; }
     .b2b-policy-text p { margin: 0; }
+    .b2b-success-card { text-align: center; padding: 32px 16px; display: none; }
+    .b2b-success-icon { width: 48px; height: 48px; margin: 0 auto 14px; border-radius: 50%; background: #e3f1df; color: #108043; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; }
+    .b2b-success-title { font-size: 20px; font-weight: 700; color: #1a1a1a; margin: 0 0 8px 0; }
+    .b2b-success-text { font-size: 14px; color: #6d6d6d; margin: 0; line-height: 1.5; }
+    .b2b-error-box { background: #fff4f4; border: 1px solid #fed2d2; color: #c0392b; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; display: none; line-height: 1.4; }
+    .b2b-submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
   `;
 
     const fieldsHtml = fields.map((field) => {
@@ -75,12 +87,13 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
                 controlHtml = `<textarea name="${field.id}" class="b2b-textarea" rows="3" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''}></textarea>`;
                 break;
 
-            case 'select':
+            case 'select': {
                 const selectOpts = (field.options || []).map(opt => `<option value="${opt.value}">${opt.label || opt.value}</option>`).join('');
                 controlHtml = `<select name="${field.id}" class="b2b-select" ${field.required ? 'required' : ''}><option value="" disabled selected>${field.placeholder || 'Select an option...'}</option>${selectOpts}</select>`;
                 break;
+            }
 
-            case 'radio':
+            case 'radio': {
                 const radioOpts = (field.options || []).map(opt => `
           <label class="b2b-choice-label">
             <input type="radio" name="${field.id}" value="${opt.value}" class="b2b-radio-input" ${field.required ? 'required' : ''} />
@@ -89,8 +102,9 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
         `).join('');
                 controlHtml = `<div class="b2b-choice-group">${radioOpts}</div>`;
                 break;
+            }
 
-            case 'checkbox_group':
+            case 'checkbox_group': {
                 const checkOpts = (field.options || []).map(opt => `
           <label class="b2b-choice-label">
             <input type="checkbox" name="${field.id}[]" value="${opt.value}" class="b2b-checkbox-input" />
@@ -99,13 +113,19 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
         `).join('');
                 controlHtml = `<div class="b2b-choice-group">${checkOpts}</div>`;
                 break;
+            }
 
-            case 'file':
+            case 'file': {
                 controlHtml = `
           <div class="b2b-file-dropzone">
-            <input type="file" name="${field.id}" class="b2b-file-input" ${field.required ? 'required' : ''} />
+            <input type="file" name="${field.id}${field.multiple ? '[]' : ''}" ${field.multiple ? 'multiple' : ''} class="b2b-file-input" ${field.required ? 'required' : ''} />
+            <div class="b2b-file-help">${field.multiple ? 'Select or drag multiple files' : 'Select or drag a file'}</div>
           </div>
         `;
+                break;
+            }
+            default:
+                controlHtml = `<input type="text" name="${field.id}" class="b2b-input" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''} />`;
                 break;
         }
 
@@ -118,19 +138,105 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
     }).join('');
 
     const html = `
-    <div class="b2b-form-wrapper" data-form-id="${formId}">
-      <h2 class="b2b-form-title">${title || 'B2B Form'}</h2>
-      ${description ? `<div class="b2b-form-desc">${description}</div>` : ''}
-      <form action="/apps/b2b-form/submit" method="POST" enctype="multipart/form-data" class="b2b-form">
+    <div class="b2b-form-wrapper" id="b2b-wrapper-${formId}" data-form-id="${formId}">
+      <div class="b2b-form-header">
+        <h2 class="b2b-form-title">${title || 'B2B Form'}</h2>
+        ${description ? `<div class="b2b-form-desc">${description}</div>` : ''}
+      </div>
+
+      <form action="/apps/wholesale-form/submit" method="POST" enctype="multipart/form-data" class="b2b-form" id="b2b-form-${formId}">
         <input type="hidden" name="form_id" value="${formId}" />
         <input type="hidden" name="shop" value="{{ shop.permanent_domain }}" />
         <input type="hidden" name="customer_id" value="{{ customer.id }}" />
         
-        ${fieldsHtml}
+        <div class="b2b-form-fields">
+          ${fieldsHtml}
+        </div>
         
-        <button type="submit" class="b2b-submit-btn">${buttonLabel || 'Submit'}</button>
+        <button type="submit" class="b2b-submit-btn" id="b2b-btn-${formId}">${buttonLabel || 'Submit Application'}</button>
+
+        <div id="b2b-status-${formId}" style="display:none; margin-top:16px; padding:12px 16px; border-radius:6px; font-size:13px; text-align:center; font-weight:600; line-height:1.4;"></div>
       </form>
-      ${policies ? `<div class="b2b-policy-text">${policies}</div>` : ''}
+
+      ${policies ? `<div class="b2b-policy-text" id="b2b-policy-${formId}">${policies}</div>` : ''}
+
+      <script>
+        (function() {
+          var form = document.getElementById("b2b-form-${formId}");
+          if (!form) return;
+
+          form.addEventListener("submit", function(e) {
+            e.preventDefault();
+            var btn = document.getElementById("b2b-btn-${formId}");
+            var statusBox = document.getElementById("b2b-status-${formId}");
+
+            if (statusBox) {
+              statusBox.style.display = "block";
+              statusBox.style.background = "#f0f4f8";
+              statusBox.style.color = "#333333";
+              statusBox.style.border = "1px solid #d0d7de";
+              statusBox.textContent = "Submitting form, please wait...";
+            }
+            if (btn) {
+              btn.disabled = true;
+              btn.textContent = "Submitting...";
+            }
+
+            var formData = new FormData(form);
+            var targetUrl = form.getAttribute("action") || "/apps/wholesale-form/submit";
+
+            fetch(targetUrl, {
+              method: "POST",
+              body: formData,
+              headers: { "Accept": "application/json" }
+            })
+            .then(function(res) {
+              return res.json().then(function(data) {
+                return { ok: res.ok, data: data };
+              }).catch(function() {
+                return { ok: res.ok, data: { success: res.ok } };
+              });
+            })
+            .then(function(result) {
+              if (result.data && result.data.success) {
+                if (statusBox) {
+                  statusBox.style.display = "block";
+                  statusBox.style.background = "#e3f1df";
+                  statusBox.style.color = "#108043";
+                  statusBox.style.border = "1px solid #c2e1bc";
+                  statusBox.textContent = "✓ Form submitted successfully!";
+                }
+                form.reset();
+              } else {
+                var errorMsg = (result.data && result.data.error) ? result.data.error : "Submission failed. Please check your inputs and try again.";
+                if (statusBox) {
+                  statusBox.style.display = "block";
+                  statusBox.style.background = "#fff4f4";
+                  statusBox.style.color = "#c0392b";
+                  statusBox.style.border = "1px solid #fed2d2";
+                  statusBox.textContent = "✕ " + errorMsg;
+                }
+              }
+            })
+            .catch(function(err) {
+              console.error("Submission error:", err);
+              if (statusBox) {
+                statusBox.style.display = "block";
+                statusBox.style.background = "#fff4f4";
+                statusBox.style.color = "#c0392b";
+                statusBox.style.border = "1px solid #fed2d2";
+                statusBox.textContent = "✕ Network error while submitting. Please try again.";
+              }
+            })
+            .finally(function() {
+              if (btn) {
+                btn.disabled = false;
+                btn.textContent = "${buttonLabel || 'Submit Application'}";
+              }
+            });
+          });
+        })();
+      </script>
     </div>
   `;
 
@@ -138,7 +244,7 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
 }
 
 // ============================================================================
-// 3. REMIX LOADER
+// 3. REMIX / REACT ROUTER LOADER
 // ============================================================================
 export const loader = async ({ request }) => {
     await authenticate.admin(request);
@@ -148,134 +254,255 @@ export const loader = async ({ request }) => {
 };
 
 // ============================================================================
-// 4. REMIX ACTION (CREATE METAOBJECT DEF & SAVE TO DATABASE)
+// 4. ACTION HANDLER (CREATE METAOBJECT DEF & SAVE TO PRISMA DATABASE)
 // ============================================================================
 export const action = async ({ request }) => {
     const { admin, session } = await authenticate.admin(request);
-    const body = await request.json();
 
-    const { title, description, buttonlabel, policies, fields } = body;
-
-    const uniqueHash = `${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const formId = `form_${uniqueHash}`;
-    const metaobjectType = `b2b_${uniqueHash}`;
-
-    const fieldDefinitions = [];
-    const dbMappings = [];
-
-    // Iterate over fields dynamically
-    fields.forEach((field) => {
-        const rawKey = (field.label || `field_${field.id}`)
-            .toLowerCase()
-            .replace(/[^a-z0-9_]/g, "_")
-            .replace(/^_+|_+$/g, "")
-            .substring(0, 30);
-
-        const metaKey = rawKey || `field_${field.id.substring(0, 8)}`;
-
-        fieldDefinitions.push({
-            key: metaKey,
-            name: (field.label || "Untitled Field").substring(0, 60),
-            type: mapToShopifyMetaobjectType(field.type),
-        });
-
-        dbMappings.push({
-            fieldId: field.id,
-            fieldLabel: field.label || "Untitled Field",
-            fieldType: field.type,
-            metaobjectKey: metaKey,
-        });
-    });
-
-    // Create Shopify Metaobject Definition
-    const metaDefMutation = `
-        mutation CreateMetaobjectDefinition($definition: MetaobjectDefinitionCreateInput!) {
-        metaobjectDefinitionCreate(definition: $definition) {
-            metaobjectDefinition {
-            id
-            type
-            }
-            userErrors {
-            field
-            message
+    let body;
+    try {
+        const contentType = request.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+            body = await request.json();
+        } else {
+            const formData = await request.formData();
+            const rawData = formData.get("data") || formData.get("payload");
+            if (rawData) {
+                body = JSON.parse(rawData);
+            } else {
+                body = Object.fromEntries(formData);
+                if (typeof body.fields === "string") {
+                    body.fields = JSON.parse(body.fields);
+                }
             }
         }
-        }
-    `;
-
-    const metaDefRes = await admin.graphql(metaDefMutation, {
-        variables: {
-            definition: {
-                name: `B2B Form - ${title || 'Application'}`,
-                type: metaobjectType,
-                fieldDefinitions,
-            },
-        },
-    });
-
-    const metaDefJson = await metaDefRes.json();
-    const metaErrors = metaDefJson?.data?.metaobjectDefinitionCreate?.userErrors;
-
-    if (metaErrors && metaErrors.length > 0) {
-        return { success: false, errors: metaErrors }, { status: 400 };
+    } catch (parseError) {
+        console.error("Payload parse error:", parseError);
+        return Response.json(
+            { success: false, errors: [{ message: "Invalid request payload format." }] },
+            { status: 400 },
+        );
     }
 
-    const metaobjectDefId = metaDefJson.data.metaobjectDefinitionCreate.metaobjectDefinition.id;
+    const { title, description, buttonlabel, policies, fields } = body ?? {};
 
-    // Generate class-based HTML & CSS
-    const { html, css } = generateFormHtmlAndCss(formId, title, description, fields, buttonlabel, policies);
+    if (!Array.isArray(fields) || fields.length === 0) {
+        return Response.json(
+            { success: false, errors: [{ message: "Please add at least one field before saving the form." }] },
+            { status: 400 },
+        );
+    }
 
-    // Store Form and mappings in Prisma DB
-    const savedForm = await db.form.create({
-        data: {
-            id: formId,
-            shop: session.shop,
-            name: title || "New B2B Form",
-            html,
-            css,
-            metaobjectType,
-            metaobjectDefId,
-            FieldMapping: {
-                create: dbMappings,
+    try {
+        const uniqueHash = `${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+        const formId = `form_${uniqueHash}`;
+        const metaobjectType = `b2b_${uniqueHash}`;
+
+        const fieldDefinitions = [];
+        const dbMappings = [];
+        const usedKeys = new Set();
+
+        // Build field definitions for Shopify Metaobjects & DB FieldMappings
+        fields.forEach((field, index) => {
+            let baseKey = (field.label || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^a-z0-9_]/g, "_")
+                .replace(/^_+|_+$/g, "")
+                .substring(0, 25);
+
+            if (!baseKey || /^[0-9_]/.test(baseKey)) {
+                baseKey = `field_${baseKey || index}`.replace(/^_+|_+$/g, "").substring(0, 25);
+            }
+            if (!baseKey || baseKey.length < 2) {
+                baseKey = `field_${index + 1}`;
+            }
+
+            let metaKey = baseKey;
+            let suffix = 1;
+            while (usedKeys.has(metaKey)) {
+                const suffixStr = `_${suffix}`;
+                metaKey = `${baseKey.substring(0, 25 - suffixStr.length)}${suffixStr}`;
+                suffix += 1;
+            }
+            usedKeys.add(metaKey);
+
+            const shopifyFieldType = mapToShopifyMetaobjectType(field);
+
+            fieldDefinitions.push({
+                key: metaKey,
+                name: (field.label || `Field ${index + 1}`).substring(0, 60),
+                type: shopifyFieldType,
+                required: false, // Optional in metaobject schema for maximum submission flexibility
+            });
+
+            dbMappings.push({
+                id: `fm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}_${index}`,
+                fieldId: field.id,
+                fieldLabel: field.label || `Field ${index + 1}`,
+                fieldType: shopifyFieldType,
+                metaobjectKey: metaKey,
+                required: Boolean(field.required),
+            });
+        });
+
+        // Create Shopify Metaobject Definition via Admin GraphQL
+        const metaDefMutation = `
+          mutation CreateMetaobjectDefinition($definition: MetaobjectDefinitionCreateInput!) {
+            metaobjectDefinitionCreate(definition: $definition) {
+              metaobjectDefinition {
+                id
+                type
+                name
+              }
+              userErrors {
+                field
+                message
+                code
+              }
+            }
+          }
+        `;
+
+        const metaDefName = `B2B Form - ${(title || "Application").trim()}`.substring(0, 60);
+
+        const metaDefRes = await admin.graphql(metaDefMutation, {
+            variables: {
+                definition: {
+                    name: metaDefName,
+                    type: metaobjectType,
+                    displayNameKey: fieldDefinitions[0]?.key,
+                    fieldDefinitions,
+                },
             },
-        },
-        include: {
-            FieldMapping: true,
-        },
-    });
+        });
 
-    return { success: true, form: savedForm };
+        const metaDefJson = await metaDefRes.json();
+
+        if (metaDefJson.errors?.length) {
+            console.error("GraphQL error creating metaobject definition:", metaDefJson.errors);
+            return Response.json(
+                {
+                    success: false,
+                    errors: metaDefJson.errors.map((e) => ({ message: e.message })),
+                },
+                { status: 400 },
+            );
+        }
+
+        const metaDefResult = metaDefJson?.data?.metaobjectDefinitionCreate;
+        const metaErrors = metaDefResult?.userErrors;
+
+        if (metaErrors && metaErrors.length > 0) {
+            console.error("Shopify metaobjectDefinitionCreate userErrors:", metaErrors);
+            return Response.json({ success: false, errors: metaErrors }, { status: 400 });
+        }
+
+        const metaobjectDefId = metaDefResult?.metaobjectDefinition?.id;
+
+        if (!metaobjectDefId) {
+            return Response.json(
+                {
+                    success: false,
+                    errors: [{ message: "Shopify did not return a metaobject definition ID." }],
+                },
+                { status: 502 },
+            );
+        }
+
+        // Generate class-based HTML & CSS
+        const { html, css } = generateFormHtmlAndCss(formId, title, description, fields, buttonlabel, policies);
+
+        // Store Form and mappings in Prisma DB
+        let savedForm;
+        try {
+            savedForm = await db.form.create({
+                data: {
+                    id: formId,
+                    shop: session.shop,
+                    name: title || "New B2B Form",
+                    html,
+                    css,
+                    metaobjectType,
+                    metaobjectDefId,
+                    FieldMapping: {
+                        create: dbMappings,
+                    },
+                },
+                include: {
+                    FieldMapping: true,
+                },
+            });
+        } catch (dbError) {
+            console.error("Failed to persist form after metaobject definition was created:", dbError);
+
+            // Roll back the metaobject definition if DB write fails to prevent orphaned records
+            let rollbackSucceeded = false;
+            try {
+                const rollbackRes = await admin.graphql(
+                    `mutation DeleteOrphanedDefinition($id: ID!) {
+                        metaobjectDefinitionDelete(id: $id) {
+                            deletedId
+                            userErrors { field message }
+                        }
+                    }`,
+                    { variables: { id: metaobjectDefId } },
+                );
+                const rollbackJson = await rollbackRes.json();
+                rollbackSucceeded = Boolean(rollbackJson?.data?.metaobjectDefinitionDelete?.deletedId);
+            } catch (rollbackError) {
+                console.error("Rollback of metaobject definition also failed:", rollbackError);
+            }
+
+            return Response.json(
+                {
+                    success: false,
+                    errors: [{
+                        message: rollbackSucceeded
+                            ? "We could not save the form to the database. The Shopify Metaobject Definition was automatically reverted. Please try again."
+                            : "We could not save the form to the database. Automatic revert of the Metaobject Definition was incomplete. Please check Settings > Custom data in Shopify admin.",
+                    }],
+                },
+                { status: 500 },
+            );
+        }
+
+        return Response.json({ success: true, form: savedForm }, { status: 200 });
+    } catch (error) {
+        console.error("Unexpected error creating B2B form:", error);
+        return Response.json(
+            { success: false, errors: [{ message: "Something went wrong while saving the form: " + (error?.message || "Unknown error") }] },
+            { status: 500 },
+        );
+    }
 };
 
 // ============================================================================
-// 5. REACT UI COMPONENT (FORM BUILDER & PREVIEW)
+// 5. REACT UI COMPONENT (FORM BUILDER & LIVE PREVIEW)
 // ============================================================================
 const FIELD_TYPES = [
-    { type: "email", title: "Email", description: "Email address", defaultLabel: "Email", defaultPlaceholder: "Enter email address...", hasOptions: false, icon: "email" },
-    { type: "text", title: "Single-line text", description: "Short single-line text input", defaultLabel: "Full Name", defaultPlaceholder: "Enter full name...", hasOptions: false, icon: "text-font" },
-    { type: "select", title: "Dropdown list", description: "Select one option from a dropdown menu", defaultLabel: "Business Type", defaultPlaceholder: "Select an option...", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "Retailer / Storefront", value: "retailer" }, { id: "opt_2", label: "Wholesaler / Distributor", value: "wholesaler" }, { id: "opt_3", label: "Corporate / Institutional", value: "corporate" }], icon: "caret-down" },
-    { type: "radio", title: "Radio buttons", description: "Choose one option from visible radio choices", defaultLabel: "Company Size", defaultPlaceholder: "", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "1 - 10 Employees", value: "1_10" }, { id: "opt_2", label: "11 - 50 Employees", value: "11_50" }, { id: "opt_3", label: "50+ Employees", value: "50_plus" }], icon: "radio-control" },
-    { type: "textarea", title: "Multi-line text", description: "Multi-line paragraph / message text area", defaultLabel: "Company Description / Note", defaultPlaceholder: "Provide details about your business and bulk purchase needs...", hasOptions: false, icon: "text-align-left" },
-    { type: "checkbox_group", title: "Multiple choice", description: "Multiple choice checkboxes", defaultLabel: "Interested Product Categories", defaultPlaceholder: "", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "Raw Materials", value: "raw_materials" }, { id: "opt_2", label: "Finished Goods", value: "finished_goods" }, { id: "opt_3", label: "Custom Packaging", value: "custom_packaging" }], icon: "checkbox" },
-    { type: "date", title: "Date", description: "Date picker for orders, timeline or registration", defaultLabel: "Target Launch Date", defaultPlaceholder: "", hasOptions: false, icon: "calendar" },
-    { type: "number", title: "Number", description: "Numeric input for quantity, annual budget or tax ID", defaultLabel: "Estimated Monthly Order Quantity", defaultPlaceholder: "100", hasOptions: false, icon: "number-one" },
-    { type: "file", title: "File upload", description: "Upload business licenses, tax exempt certificates", defaultLabel: "Business Certificate / Resale License", defaultPlaceholder: "", hasOptions: false, icon: "file" },
+    { type: "email", title: "Email", description: "Email address input", defaultLabel: "Email Address", defaultPlaceholder: "Enter email address...", hasOptions: false, icon: "email" },
+    { type: "text", title: "Single-line text", description: "Short single-line text input", defaultLabel: "Full Name / Company Representative", defaultPlaceholder: "Enter full name...", hasOptions: false, icon: "text-font" },
+    { type: "select", title: "Dropdown list", description: "Select one option from a dropdown menu", defaultLabel: "Business Entity Type", defaultPlaceholder: "Select your business type...", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "Wholesaler / Distributor", value: "wholesaler" }, { id: "opt_2", label: "Retail Storefront", value: "retailer" }, { id: "opt_3", label: "Corporate Account", value: "corporate" }], icon: "caret-down" },
+    { type: "radio", title: "Radio buttons", description: "Choose one option from visible radio choices", defaultLabel: "Expected Monthly Order Volume", defaultPlaceholder: "", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "$5,000 - $20,000 / month", value: "5k_20k" }, { id: "opt_2", label: "$20,000 - $100,000 / month", value: "20k_100k" }, { id: "opt_3", label: "$100,000+ / month", value: "100k_plus" }], icon: "radio-control" },
+    { type: "textarea", title: "Multi-line text", description: "Multi-line paragraph / message text area", defaultLabel: "Business Description & Requirements", defaultPlaceholder: "Provide details about your business and bulk purchase needs...", hasOptions: false, icon: "text-align-left" },
+    { type: "checkbox_group", title: "Multiple choice", description: "Multiple choice checkboxes (list of values)", defaultLabel: "Interested Product Categories", defaultPlaceholder: "", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "Raw Materials", value: "raw_materials" }, { id: "opt_2", label: "Finished Goods", value: "finished_goods" }, { id: "opt_3", label: "Custom Packaging", value: "custom_packaging" }], icon: "checkbox" },
+    { type: "date", title: "Date", description: "Date picker for launch or registration date", defaultLabel: "Target Launch Date", defaultPlaceholder: "", hasOptions: false, icon: "calendar" },
+    { type: "number", title: "Number", description: "Numeric input for quantity, budget or tax ID", defaultLabel: "Estimated Monthly Quantity", defaultPlaceholder: "100", hasOptions: false, icon: "number-one" },
+    { type: "file", title: "File upload", description: "Upload business licenses, tax certificates (Shopify file field)", defaultLabel: "Business Certificate / Resale License", defaultPlaceholder: "", hasOptions: false, multiple: false, icon: "file" },
     { type: "phone", title: "Phone", description: "Phone number with international format", defaultLabel: "Company Contact Phone", defaultPlaceholder: "+1 (555) 000-0000", hasOptions: false, icon: "phone" }
 ];
 
-// Unique id used to wire the native App Bridge contextual Save Bar to this page.
-// The host (Shopify Admin) owns placement/positioning of the bar - it renders
-// pinned to the viewport (docked responsively, top on desktop / bottom on
-// small screens) so we don't manage its position ourselves.
 const SAVE_BAR_ID = "b2b-form-save-bar";
 
 const INITIAL_BUILDER_STATE = {
     title: 'B2B Form Application',
     description: 'Applied for B2B for Bulk Purchase and Contracts with required detail we will verify if approved specialize treatment given',
-    buttonlabel: 'Submit',
+    buttonlabel: 'Submit Application',
     policies: 'By signing up, you agree to receive marketing emails. View our privacy policy and terms of service for more info.',
     fields: [
-        { id: "f_email", type: "email", label: "Email", placeholder: "Enter email address...", required: true, options: [] },
+        { id: "f_email", type: "email", label: "Business Email", placeholder: "Enter email address...", required: true, options: [] },
         { id: "f_name", type: "text", label: "Company / Contact Name", placeholder: "Enter company or representative name...", required: true, options: [] },
         { id: "f_type", type: "select", label: "Business Entity Type", placeholder: "Select your business type...", required: true, options: [{ id: "opt_1", label: "Wholesaler / Reseller", value: "wholesaler" }, { id: "opt_2", label: "Corporate Account", value: "corporate" }, { id: "opt_3", label: "Retail Partner", value: "retail_partner" }] },
         { id: "f_size", type: "radio", label: "Expected Order Volume", placeholder: "", required: false, options: [{ id: "opt_r1", label: "$5,000 - $20,000 / month", value: "tier_1" }, { id: "opt_r2", label: "$20,000 - $100,000 / month", value: "tier_2" }, { id: "opt_r3", label: "$100,000+ / month", value: "tier_3" }] }
@@ -288,47 +515,67 @@ export default function New() {
     const submit = useSubmit();
     const navigate = useNavigate();
     const navigation = useNavigation();
-    const shopify = useAppBridge();
+    const saveBarRef = useRef(null);
 
     const isSaving = navigation.state === "submitting";
 
-    const [title, setTitle] = useState(INITIAL_BUILDER_STATE.title);
+    const [title, setTitle] = useState(formName || INITIAL_BUILDER_STATE.title);
     const [description, setDescription] = useState(INITIAL_BUILDER_STATE.description);
     const [buttonlabel, setButtonLabel] = useState(INITIAL_BUILDER_STATE.buttonlabel);
     const [policies, setPolicies] = useState(INITIAL_BUILDER_STATE.policies);
     const [fields, setFields] = useState(INITIAL_BUILDER_STATE.fields);
 
-    // Snapshot of the last-saved state. Comparing against this is how we know
-    // whether to show the Save Bar - it's the single source of truth for both
-    // the top and bottom docking positions the host may render it in.
     const [savedState, setSavedState] = useState(INITIAL_BUILDER_STATE);
-
     const [activeConfigId, setActiveConfigId] = useState(null);
     const [isPickerOpen, setIsPickerOpen] = useState(false);
+    const [hasInteracted, setHasInteracted] = useState(false);
+
+    const handleBuilderInteraction = () => {
+        if (!hasInteracted) setHasInteracted(true);
+    };
 
     const isDirty = JSON.stringify({ title, description, buttonlabel, policies, fields }) !== JSON.stringify(savedState);
+    const showSaveBar = hasInteracted || isDirty;
 
-    // Show / hide the native contextual Save Bar as the form becomes dirty.
-    // This single effect is what makes "Save" and "Discard" behave the same
-    // way no matter where the host docks the bar.
+    // Show/hide native Save Bar safely
     useEffect(() => {
-        if (!shopify) return;
-        if (isDirty) {
-            shopify.saveBar.show(SAVE_BAR_ID);
-        } else {
-            shopify.saveBar.hide(SAVE_BAR_ID);
+        try {
+            if (typeof shopify !== "undefined" && shopify.saveBar) {
+                if (showSaveBar) {
+                    shopify.saveBar.show(SAVE_BAR_ID);
+                } else {
+                    shopify.saveBar.hide(SAVE_BAR_ID);
+                }
+            }
+        } catch (e) {
+            console.debug("shopify.saveBar API fallback:", e);
         }
-    }, [isDirty, shopify]);
 
-    // Once a save succeeds, the current values become the new "saved" baseline
-    // and the Save Bar hides itself again.
+        const bar = saveBarRef.current;
+        if (!bar) return;
+
+        if (showSaveBar) {
+            if (typeof bar.show === "function") {
+                bar.show();
+            } else {
+                bar.removeAttribute("hidden");
+            }
+        } else {
+            if (typeof bar.hide === "function") {
+                bar.hide();
+            } else {
+                bar.setAttribute("hidden", "");
+            }
+        }
+    }, [showSaveBar]);
+
+    // When save succeeds
     useEffect(() => {
         if (actionData?.success) {
             setSavedState({ title, description, buttonlabel, policies, fields });
-            shopify?.saveBar?.hide(SAVE_BAR_ID);
+            setHasInteracted(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [actionData]);
+    }, [actionData, title, description, buttonlabel, policies, fields]);
 
     const handleSaveForm = () => {
         const payload = { title, description, buttonlabel, policies, fields };
@@ -336,36 +583,44 @@ export default function New() {
     };
 
     const handleCancelOrDiscard = () => {
-        shopify?.saveBar?.hide(SAVE_BAR_ID);
-        navigate(-1);
+        setHasInteracted(false);
+        const bar = saveBarRef.current;
+        if (bar) {
+            if (typeof bar.hide === "function") bar.hide();
+            else bar.setAttribute("hidden", "");
+        }
+        navigate("/app/form");
     };
 
     const addField = (fieldTypeDef) => {
-        const newId = `field_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+        const newId = `field_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
         const newField = {
             id: newId,
             type: fieldTypeDef.type,
             label: fieldTypeDef.defaultLabel,
             placeholder: fieldTypeDef.defaultPlaceholder,
             required: false,
+            multiple: Boolean(fieldTypeDef.multiple),
             options: fieldTypeDef.hasOptions
-                ? fieldTypeDef.defaultOptions.map(opt => ({ ...opt, id: `opt_${Date.now()}_${Math.random().toString(36).substring(2, 5)}` }))
+                ? fieldTypeDef.defaultOptions.map((opt, i) => ({ ...opt, id: `opt_${Date.now().toString(36)}_${i}` }))
                 : []
         };
         setFields(prev => [...prev, newField]);
         setIsPickerOpen(false);
         setActiveConfigId(newId);
+        setHasInteracted(true);
     };
 
     const updateField = (id, updates) => {
-        if (id === "f_email") return;
         setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+        setHasInteracted(true);
     };
 
     const removeField = (id) => {
-        if (id === "f_email") return;
+        if (id === "f_email") return; // Email is kept as mandatory contact identifier
         setFields(prev => prev.filter(f => f.id !== id));
         if (activeConfigId === id) setActiveConfigId(null);
+        setHasInteracted(true);
     };
 
     const moveField = (index, direction) => {
@@ -377,15 +632,17 @@ export default function New() {
             next.splice(targetIndex, 0, item);
             return next;
         });
+        setHasInteracted(true);
     };
 
     const addOption = (fieldId) => {
         setFields(prev => prev.map(f => {
             if (f.id !== fieldId) return f;
             const optIndex = (f.options?.length || 0) + 1;
-            const newOpt = { id: `opt_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`, label: `Option ${optIndex}`, value: `option_${optIndex}` };
+            const newOpt = { id: `opt_${Date.now().toString(36)}_${optIndex}`, label: `Option ${optIndex}`, value: `option_${optIndex}` };
             return { ...f, options: [...(f.options || []), newOpt] };
         }));
+        setHasInteracted(true);
     };
 
     const updateOption = (fieldId, optionId, key, value) => {
@@ -393,6 +650,7 @@ export default function New() {
             if (f.id !== fieldId) return f;
             return { ...f, options: f.options.map(opt => opt.id === optionId ? { ...opt, [key]: value } : opt) };
         }));
+        setHasInteracted(true);
     };
 
     const removeOption = (fieldId, optionId) => {
@@ -400,32 +658,26 @@ export default function New() {
             if (f.id !== fieldId) return f;
             return { ...f, options: f.options.filter(opt => opt.id !== optionId) };
         }));
+        setHasInteracted(true);
     };
 
     return (
         <>
             <style>{`
-        .field-item-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid #e3e3e3; border-radius: 8px; margin-bottom: 8px; background: #ffffff; cursor: pointer; transition: all 0.15s ease-in-out; }
+        .field-item-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid #e3e3e3; border-radius: 8px; margin-bottom: 8px; background: #ffffff; cursor: pointer; transition: all 0.15s ease-in-out; }
         .field-item-row:hover { background: #f7f8f9; border-color: #c9cccf; }
         .field-item-row.is-active { background: #f1f7fe; border-color: #2c6ecb; box-shadow: 0 0 0 1px #2c6ecb; }
-        .field-action-btn { background: transparent; border: none; color: #5c5f62; cursor: pointer; padding: 5px; border-radius: 4px; display: flex; align-items: center; justify-content: center; transition: background 0.1s ease; }
-        .field-action-btn:hover { background: #e4e5e7; color: #202223; }
-        .field-action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .field-action-btn.delete-btn:hover { background: #fedcdb; color: #d72c0d; }
-        .picker-popover-menu { background: #fff; border: 1px solid #c9cccf; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); padding: 6px; margin-top: 6px; max-height: 380px; overflow-y: auto; z-index: 1000; }
-        .picker-option-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; border: none; background: transparent; width: 100%; text-align: left; cursor: pointer; color: #202223; font-size: 13px; font-weight: 500; font-family: inherit; }
-        .picker-option-item:hover { background: #f1f2f4; }
-        .picker-option-icon { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; background: #f6f6f7; color: #303030; flex-shrink: 0; }
-        .field-config-container { background: #fbfbfb; border: 1px solid #cce0ff; border-radius: 8px; padding: 14px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,91,211,0.08); }
+        .picker-popover-menu { background: #fff; border: 1px solid #c9cccf; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.15); padding: 8px; margin-top: 8px; max-height: 420px; overflow-y: auto; z-index: 1000; display: flex; flex-direction: column; gap: 4px; }
+        .picker-option-btn { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; text-align: left; transition: background 0.12s; }
+        .picker-option-btn:hover { background: #f4f6f8; border-color: #e1e3e5; }
+        .picker-option-icon { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; background: #f1f2f4; color: #303030; flex-shrink: 0; }
+        .field-config-container { background: #f9fbfd; border: 1px solid #cce0ff; border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 10px rgba(0,91,211,0.08); }
         .config-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid #e1e9f4; }
-        .config-option-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-        .config-input { width: 100%; box-sizing: border-box; padding: 6px 10px; font-size: 13px; border: 1px solid #c9cccf; border-radius: 6px; background: #fff; outline: none; font-family: inherit; }
+        .config-option-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .config-input { width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 13px; border: 1px solid #c9cccf; border-radius: 6px; background: #fff; outline: none; font-family: inherit; }
         .config-input:focus { border-color: #005bd3; box-shadow: 0 0 0 1px #005bd3; }
-        .opt-add-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: #005bd3; background: #f0f6ff; border: 1px dashed #7ab1ff; border-radius: 6px; cursor: pointer; margin-top: 6px; font-family: inherit; }
-        .opt-remove-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #fff; border: 1px solid #e1e3e5; border-radius: 6px; color: #8c9196; cursor: pointer; flex-shrink: 0; }
-        .opt-remove-btn:hover { background: #fff0f0; border-color: #ffb8b8; color: #d72c0d; }
 
-        .preview-shell { background: #f0f0f0; border-radius: 10px; overflow: hidden; border: 1px solid #d5d5d5; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+        .preview-shell { background: #f0f0f0; border-radius: 10px; overflow: hidden; border: 1px solid #d5d5d5; font-family: -apple-system, BlinkMacSystemFont, sans-serif; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
         .preview-browser-bar { background: #e8e8e8; border-bottom: 1px solid #d0d0d0; padding: 8px 12px; display: flex; align-items: center; gap: 10px; }
         .preview-browser-dots { display: flex; gap: 5px; }
         .preview-browser-dot { width: 11px; height: 11px; border-radius: 50%; }
@@ -433,8 +685,8 @@ export default function New() {
         .preview-storefront { background: #ffffff; min-height: 500px; }
         .preview-nav { background: #1a1a1a; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
         .preview-nav-logo { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 1px; text-transform: uppercase; }
-        .preview-page-body { padding: 12px; max-width: 560px; margin: 0 auto; }
-        .preview-form-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+        .preview-page-body { padding: 20px 16px; max-width: 560px; margin: 0 auto; }
+        .preview-form-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
         .preview-form-title { font-size: 20px; font-weight: 700; color: #1a1a1a; text-align: center; margin: 0 0 8px 0; }
         .preview-form-desc { font-size: 13px; color: #6d6d6d; text-align: center; margin: 0 0 20px 0; line-height: 1.5; }
         .preview-divider { border: none; border-top: 1px solid #ebebeb; margin: 0 0 20px 0; }
@@ -447,7 +699,7 @@ export default function New() {
         .preview-choice-label { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #1a1a1a; cursor: pointer; padding: 8px 12px; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; width: fit-content; }
         .preview-radio-input, .preview-checkbox-input { width: 16px; height: 16px; accent-color: #1a1a1a; cursor: pointer; }
         .preview-file-dropzone { border: 2px dashed #d0d0d0; border-radius: 8px; padding: 22px 16px; text-align: center; background: #fafafa; cursor: pointer; }
-        .preview-file-text { font-size: 12px; color: #555; margin: 0; }
+        .preview-file-text { font-size: 12px; color: #555; margin: 0; font-weight: 500; }
         .preview-file-subtext { font-size: 11px; color: #999; margin: 4px 0 0 0; }
         .preview-submit-btn { display: block; width: 100%; background: #1a1a1a; color: #fff; border: none; border-radius: 6px; padding: 12px 20px; font-size: 14px; font-weight: 600; text-align: center; cursor: pointer; margin-top: 20px; font-family: inherit; }
         .preview-policy-text { font-size: 11px; color: #999; text-align: center; margin-top: 14px; line-height: 1.5; }
@@ -455,42 +707,44 @@ export default function New() {
         .preview-footer-text { font-size: 11px; color: rgba(255,255,255,0.4); }
       `}</style>
 
-            <s-page heading={formName}>
-                {/*
-                  NATIVE APP BRIDGE SAVE BAR
-                  Replaces the old manual top action bar and bottom action bar.
-                  The host (Shopify Admin) owns where this docks (it responds
-                  to viewport size on its own), and shows/hides it for us based
-                  on the `isDirty` effect above - so "Save" and "Discard" behave
-                  identically no matter which position it renders in.
-                */}
-                <s-save-bar id={SAVE_BAR_ID}>
-                    <button
+            <s-page heading={formName || "Create B2B Form"}>
+                {/* Native App Bridge Save Bar */}
+                <s-save-bar id={SAVE_BAR_ID} ref={saveBarRef} hidden>
+                    <s-button
                         variant="primary"
                         onClick={handleSaveForm}
                         loading={isSaving ? "" : undefined}
                     >
-                        Save
-                    </button>
-                    <button
+                        Save Form
+                    </s-button>
+                    <s-button
+                        variant="secondary"
                         onClick={handleCancelOrDiscard}
                         disabled={isSaving}
                     >
                         Discard
-                    </button>
+                    </s-button>
                 </s-save-bar>
 
+                {/* Success Banner */}
                 {actionData?.success && (
-                    <s-box padding="base">
-                        <s-banner tone="success" heading="Form saved">
-                            Form and Metaobject Definition created successfully! Form ID: <strong>{actionData.form.id}</strong>
+                    <s-box padding="base none">
+                        <s-banner tone="success" heading="Form & Metaobject Created Successfully!">
+                            <s-paragraph>
+                                Form ID: <strong>{actionData.form?.id}</strong> | Metaobject Type: <strong>{actionData.form?.metaobjectType}</strong>
+                            </s-paragraph>
+                            <s-stack direction="inline" gap="small" padding="small none none none">
+                                <s-button variant="primary" onClick={() => navigate("/app/form")}>View All Forms</s-button>
+                                <s-button variant="secondary" onClick={() => navigate(0)}>Create Another</s-button>
+                            </s-stack>
                         </s-banner>
                     </s-box>
                 )}
 
+                {/* Error Banner */}
                 {actionData?.errors && (
-                    <s-box padding="base">
-                        <s-banner tone="critical" heading="Error creating form">
+                    <s-box padding="base none">
+                        <s-banner tone="critical" heading="Unable to Save Form">
                             <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
                                 {actionData.errors.map((err, idx) => (
                                     <li key={idx}>{err.message}</li>
@@ -500,45 +754,78 @@ export default function New() {
                     </s-box>
                 )}
 
-                <s-section heading="Form Settings & Fields">
-                    <s-text-field label="Title" value={title} onChange={(e) => setTitle(e.target.value)}></s-text-field>
+                <s-section
+                    heading="Form Builder & Configuration"
+                    onFocusCapture={handleBuilderInteraction}
+                    onClickCapture={handleBuilderInteraction}
+                >
+                    <s-stack direction="inline" justifyContent="space-between" alignItems="center" padding="none none base none">
+                        <s-text tone="subdued">Configure form fields, inputs, and submission requirements.</s-text>
+                        <s-button
+                            variant="primary"
+                            onClick={handleSaveForm}
+                            loading={isSaving ? "" : undefined}
+                        >
+                            {isSaving ? "Saving..." : "Save Form"}
+                        </s-button>
+                    </s-stack>
 
-                    <s-box padding="small-300 none none none">
-                        <s-text>Description</s-text>
+                    <s-text-field
+                        label="Form Title"
+                        value={title}
+                        onChange={(e) => { setTitle(e.target.value); setHasInteracted(true); }}
+                        placeholder="e.g. B2B Wholesale Application"
+                    ></s-text-field>
+
+                    <s-box padding="base none none none">
+                        <s-text><strong>Description & Instructions</strong></s-text>
                         <s-box padding="small-200 none none none">
-                            <RichTextEditor value={description} onChange={(e) => setDescription(e)} />
+                            <RichTextEditor value={description} onChange={(val) => { setDescription(val); setHasInteracted(true); }} />
                         </s-box>
                     </s-box>
 
                     <s-box padding="base none none none">
                         <s-stack direction="inline" justifyContent="space-between" alignItems="center" padding="none none small-300 none">
-                            <s-heading><span style={{ fontSize: '14px', fontWeight: '600' }}>Form Fields ({fields.length})</span></s-heading>
-                            <s-paragraph tone="neutral"><span style={{ fontSize: '12px', color: '#6d7175' }}>Click any field to edit settings</span></s-paragraph>
+                            <s-heading><span style={{ fontSize: '15px', fontWeight: '600' }}>Form Fields ({fields.length})</span></s-heading>
+                            <s-paragraph tone="neutral"><span style={{ fontSize: '12px', color: '#6d7175' }}>Click any field to customize settings</span></s-paragraph>
                         </s-stack>
 
-                        <div style={{ marginBottom: '10px' }}>
+                        <div style={{ marginBottom: '12px' }}>
                             {fields.map((field, idx) => {
                                 const typeMeta = FIELD_TYPES.find(t => t.type === field.type) || FIELD_TYPES[0];
                                 const isSelected = activeConfigId === field.id;
-                                const isLocked = field.id === "f_email";
+                                const isEmailField = field.id === "f_email";
 
                                 return (
                                     <div key={field.id}>
                                         <div
                                             className={`field-item-row ${isSelected ? 'is-active' : ''}`}
-                                            onClick={() => !isLocked && setActiveConfigId(isSelected ? null : field.id)}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => setActiveConfigId(isSelected ? null : field.id)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault();
+                                                    setActiveConfigId(isSelected ? null : field.id);
+                                                }
+                                            }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
-                                                <div className="picker-option-icon" style={{ width: '24px', height: '24px' }}>
+                                                <div className="picker-option-icon">
                                                     <s-icon type={typeMeta.icon}></s-icon>
                                                 </div>
                                                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     <span style={{ fontSize: '13px', fontWeight: '600', color: '#202223' }}>
                                                         {field.label || typeMeta.title}
                                                     </span>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
                                                         <s-badge color="base" accessibilityLabel={typeMeta.title}>{typeMeta.title}</s-badge>
-                                                        {field.required && <s-badge color="base" tone="critical"><span style={{ display: 'flex', fontSize: '10px', fontWeight: '400' }}>Required</span></s-badge>}
+                                                        {field.required && <s-badge color="base" tone="critical"><span style={{ fontSize: '10px', fontWeight: '500' }}>Required</span></s-badge>}
+                                                        {field.type === 'file' && (
+                                                            <s-badge color="base" tone={field.multiple ? "info" : "neutral"}>
+                                                                <span style={{ fontSize: '10px' }}>{field.multiple ? "Multiple Files" : "Single File"}</span>
+                                                            </s-badge>
+                                                        )}
                                                         {typeMeta.hasOptions && (
                                                             <span style={{ fontSize: '11px', color: '#6d7175' }}>
                                                                 • {field.options?.length || 0} choices
@@ -548,31 +835,55 @@ export default function New() {
                                                 </div>
                                             </div>
 
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={(e) => e.stopPropagation()}>
-                                                <button type="button" title="Move Up" disabled={idx === 0} className="field-action-btn" onClick={() => moveField(idx, -1)}>
+                                            <div
+                                                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                                                role="presentation"
+                                                onClick={(e) => e.stopPropagation()}
+                                                onKeyDown={(e) => e.stopPropagation()}
+                                            >
+                                                <s-button
+                                                    variant="secondary"
+                                                    accessibilityLabel="Move field up"
+                                                    disabled={idx === 0}
+                                                    onClick={() => moveField(idx, -1)}
+                                                >
                                                     <s-icon type="chevron-up"></s-icon>
-                                                </button>
-                                                <button type="button" title="Move Down" disabled={idx === fields.length - 1} className="field-action-btn" onClick={() => moveField(idx, 1)}>
+                                                </s-button>
+                                                <s-button
+                                                    variant="secondary"
+                                                    accessibilityLabel="Move field down"
+                                                    disabled={idx === fields.length - 1}
+                                                    onClick={() => moveField(idx, 1)}
+                                                >
                                                     <s-icon type="chevron-down"></s-icon>
-                                                </button>
-                                                {!isLocked && (
-                                                    <>
-                                                        <button type="button" title="Configure Field" className="field-action-btn" style={{ color: isSelected ? '#005bd3' : '#5c5f62' }} onClick={() => setActiveConfigId(isSelected ? null : field.id)}>
-                                                            <s-icon type="edit"></s-icon>
-                                                        </button>
-                                                        <button type="button" title="Delete Field" className="field-action-btn delete-btn" onClick={() => removeField(field.id)}>
-                                                            <s-icon type="delete"></s-icon>
-                                                        </button>
-                                                    </>
+                                                </s-button>
+                                                <s-button
+                                                    variant="secondary"
+                                                    accessibilityLabel="Configure field"
+                                                    onClick={() => setActiveConfigId(isSelected ? null : field.id)}
+                                                >
+                                                    <s-icon type="edit"></s-icon>
+                                                </s-button>
+                                                {!isEmailField && (
+                                                    <s-button
+                                                        variant="secondary"
+                                                        tone="critical"
+                                                        accessibilityLabel="Delete field"
+                                                        onClick={() => removeField(field.id)}
+                                                    >
+                                                        <s-icon type="delete"></s-icon>
+                                                    </s-button>
                                                 )}
                                             </div>
                                         </div>
 
-                                        {isSelected && !isLocked && (
+                                        {isSelected && (
                                             <div className="field-config-container">
                                                 <div className="config-header">
-                                                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#005bd3' }}>Configure {typeMeta.title}</span>
-                                                    <button type="button" className="field-action-btn" onClick={() => setActiveConfigId(null)}>✕</button>
+                                                    <span style={{ fontSize: '13px', fontWeight: '600', color: '#005bd3' }}>
+                                                        Configure {typeMeta.title} ({field.label || "Field"})
+                                                    </span>
+                                                    <s-button variant="secondary" accessibilityLabel="Close field settings" onClick={() => setActiveConfigId(null)}>✕</s-button>
                                                 </div>
 
                                                 <s-box padding="none none small-300 none">
@@ -584,7 +895,7 @@ export default function New() {
                                                     ></s-text-field>
                                                 </s-box>
 
-                                                {['text', 'textarea', 'number', 'phone', 'select'].includes(field.type) && (
+                                                {['text', 'textarea', 'number', 'phone', 'select', 'email'].includes(field.type) && (
                                                     <s-box padding="none none small-300 none">
                                                         <s-text-field
                                                             label="Placeholder Text"
@@ -595,30 +906,62 @@ export default function New() {
                                                     </s-box>
                                                 )}
 
-                                                <s-box padding="none none base none">
+                                                <s-box padding="none none small-300 none">
                                                     <s-checkbox
-                                                        label="Required field"
+                                                        label="Required field (merchant must provide this before submitting)"
                                                         checked={!!field.required}
+                                                        disabled={isEmailField}
                                                         onChange={(e) => updateField(field.id, { required: e.target.checked })}
                                                     ></s-checkbox>
                                                 </s-box>
 
+                                                {field.type === 'file' && (
+                                                    <s-box padding="none none small-300 none">
+                                                        <s-checkbox
+                                                            label="Allow multiple file uploads (creates list.file_reference metaobject field)"
+                                                            checked={!!field.multiple}
+                                                            onChange={(e) => updateField(field.id, { multiple: e.target.checked })}
+                                                        ></s-checkbox>
+                                                    </s-box>
+                                                )}
+
                                                 {typeMeta.hasOptions && (
                                                     <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #e3e8ee' }}>
                                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                                            <span style={{ fontSize: '12px', fontWeight: '600', color: '#303030' }}>Options & Choices</span>
+                                                            <span style={{ fontSize: '12px', fontWeight: '600', color: '#303030' }}>Choice Options</span>
                                                         </div>
 
                                                         {field.options?.map((opt, optIdx) => (
                                                             <div key={opt.id} className="config-option-row">
-                                                                <span style={{ fontSize: '11px', color: '#8c9196', width: '16px' }}>{optIdx + 1}.</span>
-                                                                <input type="text" className="config-input" placeholder="Option label" value={opt.label} onChange={(e) => updateOption(field.id, opt.id, 'label', e.target.value)} />
-                                                                <input type="text" className="config-input" placeholder="Option value" value={opt.value} onChange={(e) => updateOption(field.id, opt.id, 'value', e.target.value)} />
-                                                                <button type="button" className="opt-remove-btn" onClick={() => removeOption(field.id, opt.id)}>✕</button>
+                                                                <span style={{ fontSize: '11px', color: '#8c9196', width: '18px' }}>{optIdx + 1}.</span>
+                                                                <input
+                                                                    type="text"
+                                                                    className="config-input"
+                                                                    placeholder="Option display label"
+                                                                    value={opt.label}
+                                                                    onChange={(e) => updateOption(field.id, opt.id, 'label', e.target.value)}
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    className="config-input"
+                                                                    placeholder="Option value"
+                                                                    value={opt.value}
+                                                                    onChange={(e) => updateOption(field.id, opt.id, 'value', e.target.value)}
+                                                                />
+                                                                <s-button
+                                                                    variant="secondary"
+                                                                    tone="critical"
+                                                                    accessibilityLabel="Remove option"
+                                                                    onClick={() => removeOption(field.id, opt.id)}
+                                                                >
+                                                                    ✕
+                                                                </s-button>
                                                             </div>
                                                         ))}
 
-                                                        <button type="button" className="opt-add-btn" onClick={() => addOption(field.id)}>+ Add option / value</button>
+                                                        <s-button variant="secondary" onClick={() => addOption(field.id)}>
+                                                            + Add choice option
+                                                        </s-button>
                                                     </div>
                                                 )}
                                             </div>
@@ -629,15 +972,25 @@ export default function New() {
                         </div>
 
                         <div style={{ position: 'relative' }}>
-                            <button type="button" className="picker-option-item" onClick={() => setIsPickerOpen(!isPickerOpen)} style={{ border: '1px dashed #b5b5b5', borderRadius: '8px', padding: '10px 14px', justifyContent: 'center' }}>
-                                <span style={{ fontSize: '13px', fontWeight: '600' }}>+ Add new field</span>
-                            </button>
+                            <s-button variant="secondary" onClick={() => setIsPickerOpen(!isPickerOpen)}>
+                                + Add Form Field
+                            </s-button>
 
                             {isPickerOpen && (
                                 <div className="picker-popover-menu">
+                                    <div style={{ padding: '6px 8px', fontSize: '12px', fontWeight: '600', color: '#6d7175', borderBottom: '1px solid #eee' }}>
+                                        Select Field Type
+                                    </div>
                                     {FIELD_TYPES.filter(t => t.type !== "email").map((typeOption) => (
-                                        <button key={typeOption.type} type="button" className="picker-option-item" onClick={() => addField(typeOption)}>
-                                            <div className="picker-option-icon"><s-icon type={typeOption.icon}></s-icon></div>
+                                        <button
+                                            key={typeOption.type}
+                                            type="button"
+                                            className="picker-option-btn"
+                                            onClick={() => addField(typeOption)}
+                                        >
+                                            <div className="picker-option-icon">
+                                                <s-icon type={typeOption.icon}></s-icon>
+                                            </div>
                                             <div>
                                                 <div style={{ fontSize: '13px', fontWeight: '600', color: '#202223' }}>{typeOption.title}</div>
                                                 <div style={{ fontSize: '11px', color: '#6d7175' }}>{typeOption.description}</div>
@@ -650,20 +1003,39 @@ export default function New() {
                     </s-box>
 
                     <s-box padding="base none none none">
-                        <s-text-field label="Button Label" value={buttonlabel} onChange={(e) => setButtonLabel(e.target.value)}></s-text-field>
+                        <s-text-field
+                            label="Submit Button Text"
+                            value={buttonlabel}
+                            onChange={(e) => { setButtonLabel(e.target.value); setHasInteracted(true); }}
+                            placeholder="Submit Application"
+                        ></s-text-field>
                     </s-box>
 
-                    <s-box padding="small-300 none none none">
-                        <s-text>Privacy & Policies Text</s-text>
+                    <s-box padding="base none none none">
+                        <s-text><strong>Privacy & Policies Text</strong></s-text>
                         <s-box padding="small-200 none none none">
-                            <RichTextEditor value={policies} onChange={(e) => setPolicies(e)} specialclass="policy_editor" />
+                            <RichTextEditor
+                                value={policies}
+                                onChange={(val) => { setPolicies(val); setHasInteracted(true); }}
+                                specialclass="policy_editor"
+                            />
                         </s-box>
+                    </s-box>
+
+                    <s-box padding="base none none none">
+                        <s-button
+                            variant="primary"
+                            onClick={handleSaveForm}
+                            loading={isSaving ? "" : undefined}
+                        >
+                            {isSaving ? "Saving Form..." : "Save Form & Create Metaobject"}
+                        </s-button>
                     </s-box>
                 </s-section>
 
-                {/* LIVE PREVIEW PANE */}
+                {/* LIVE STOREFRONT PREVIEW PANE */}
                 <s-box slot="aside">
-                    <s-box heading="Live Form Preview" padding="none">
+                    <s-box heading="Live Storefront Preview" padding="none">
                         <div className="preview-shell">
                             <div className="preview-browser-bar">
                                 <div className="preview-browser-dots">
@@ -671,17 +1043,17 @@ export default function New() {
                                     <div className="preview-browser-dot" style={{ background: '#febc2e' }}></div>
                                     <div className="preview-browser-dot" style={{ background: '#28c840' }}></div>
                                 </div>
-                                <div className="preview-browser-url">your-store.myshopify.com/pages/b2b-application</div>
+                                <div className="preview-browser-url">your-store.myshopify.com/apps/b2b/wholesale-form</div>
                             </div>
 
                             <div className="preview-storefront">
                                 <div className="preview-nav">
-                                    <div className="preview-nav-logo">YourStore</div>
+                                    <div className="preview-nav-logo">B2B Portal</div>
                                 </div>
 
                                 <div className="preview-page-body">
                                     <div className="preview-form-card">
-                                        <h2 className="preview-form-title">{title || 'Form Title'}</h2>
+                                        <h2 className="preview-form-title">{title || 'B2B Form'}</h2>
 
                                         {description && (
                                             <div className="preview-form-desc" dangerouslySetInnerHTML={{ __html: description }} />
@@ -696,12 +1068,12 @@ export default function New() {
                                                     {field.required && <span className="preview-required-star">*</span>}
                                                 </label>
 
-                                                {field.type === 'text' && <input type="text" className="preview-input" placeholder={field.placeholder || ''} />}
-                                                {field.type === 'email' && <input type="email" className="preview-input" placeholder={field.placeholder || ''} />}
-                                                {field.type === 'phone' && <input type="tel" className="preview-input" placeholder={field.placeholder || ''} />}
-                                                {field.type === 'number' && <input type="number" className="preview-input" placeholder={field.placeholder || ''} />}
-                                                {field.type === 'date' && <input type="date" className="preview-input" />}
-                                                {field.type === 'textarea' && <textarea rows={3} className="preview-textarea" placeholder={field.placeholder || ''} />}
+                                                {field.type === 'text' && <input type="text" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
+                                                {field.type === 'email' && <input type="email" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
+                                                {field.type === 'phone' && <input type="tel" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
+                                                {field.type === 'number' && <input type="number" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
+                                                {field.type === 'date' && <input type="date" className="preview-input" readOnly />}
+                                                {field.type === 'textarea' && <textarea rows={3} className="preview-textarea" placeholder={field.placeholder || ''} readOnly />}
 
                                                 {field.type === 'select' && (
                                                     <select className="preview-select" defaultValue="">
@@ -736,15 +1108,17 @@ export default function New() {
 
                                                 {field.type === 'file' && (
                                                     <div className="preview-file-dropzone">
-                                                        <p className="preview-file-text">Drag &amp; drop file, or browse</p>
-                                                        <p className="preview-file-subtext">PDF, PNG, JPG up to 10MB</p>
+                                                        <p className="preview-file-text">
+                                                            {field.multiple ? "Drag & drop multiple files, or browse" : "Drag & drop file, or browse"}
+                                                        </p>
+                                                        <p className="preview-file-subtext">PDF, PNG, JPG, DOC up to 20MB</p>
                                                     </div>
                                                 )}
                                             </div>
                                         ))}
 
                                         <button type="button" className="preview-submit-btn">
-                                            {buttonlabel || 'Submit'}
+                                            {buttonlabel || 'Submit Application'}
                                         </button>
 
                                         {policies && (
@@ -754,7 +1128,7 @@ export default function New() {
                                 </div>
 
                                 <div className="preview-footer">
-                                    <span className="preview-footer-text">&copy; 2026 YourStore &middot; Powered by Shopify</span>
+                                    <span className="preview-footer-text">&copy; 2026 Storefront &middot; B2B Customer Portal</span>
                                 </div>
                             </div>
                         </div>
