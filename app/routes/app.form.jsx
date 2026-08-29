@@ -125,7 +125,6 @@ export default function Form() {
     const fetcher = useFetcher();
 
     const [formName, setFormName] = useState("");
-    const [expandedForm, setExpandedForm] = useState(null);   // form id whose entries are expanded
     const [deleteTarget, setDeleteTarget] = useState(null);   // { id, name }
 
     const redirectFormapp = () => shopify.modal.show("FormInput");
@@ -181,18 +180,19 @@ export default function Form() {
                     ) : (
                         <s-stack direction="block" gap="base">
                             {forms.map((f) => {
-                                const isExpanded = expandedForm === f.id;
                                 const submissions = f.formSubmissions || [];
 
                                 return (
                                     <s-box key={f.id} border="base" borderRadius="base" padding="none">
                                         {/* ── Form header row ── */}
-                                        <s-box padding="base" style={{ background: "#fafbfc", borderBottom: isExpanded ? "1px solid #e1e3e5" : "none", borderRadius: isExpanded ? "6px 6px 0 0" : "6px" }}>
+                                        <s-box padding="base" style={{ background: "#fafbfc", borderRadius: "6px" }}>
                                             <s-stack direction="inline" alignItems="center" justifyContent="space-between" gap="base">
                                                 {/* Left: form info */}
                                                 <s-stack direction="block" gap="tight">
                                                     <s-stack direction="inline" gap="small" alignItems="center">
-                                                        <strong style={{ fontSize: "14px" }}>{f.name}</strong>
+                                                        <s-link onClick={() => navigate(`/app/form-submissions/${f.id}`)}>
+                                                            <strong style={{ fontSize: "14px" }}>{f.name}</strong>
+                                                        </s-link>
                                                         <s-badge color="base" tone="info">{f.metaobjectType}</s-badge>
                                                         <s-badge color="base">{f.FieldMapping?.length || 0} fields</s-badge>
                                                         <s-badge color="base" tone={submissions.length > 0 ? "success" : "neutral"}>
@@ -213,9 +213,9 @@ export default function Form() {
                                                         <s-button
                                                             variant="secondary"
                                                             size="slim"
-                                                            onClick={() => setExpandedForm(isExpanded ? null : f.id)}
+                                                            onClick={() => navigate(`/app/form-submissions/${f.id}`)}
                                                         >
-                                                            {isExpanded ? "▲ Hide Entries" : `▼ View Entries (${submissions.length})`}
+                                                            {`View Entries (${submissions.length})`}
                                                         </s-button>
                                                     )}
                                                     <s-button
@@ -228,84 +228,6 @@ export default function Form() {
                                                 </s-stack>
                                             </s-stack>
                                         </s-box>
-
-                                        {/* ── Submissions table (expanded) ── */}
-                                        {isExpanded && submissions.length > 0 && (
-                                            <s-box padding="none">
-                                                <s-table>
-                                                    <s-table-header-row>
-                                                        <s-table-header-cell>#</s-table-header-cell>
-                                                        <s-table-header-cell>Submission ID</s-table-header-cell>
-                                                        <s-table-header-cell>Customer ID</s-table-header-cell>
-                                                        <s-table-header-cell>Status</s-table-header-cell>
-                                                        <s-table-header-cell>Metaobject</s-table-header-cell>
-                                                        <s-table-header-cell>Submitted At</s-table-header-cell>
-                                                        <s-table-header-cell>Fields</s-table-header-cell>
-                                                    </s-table-header-row>
-                                                    <s-table-body>
-                                                        {submissions.map((s, idx) => {
-                                                            let payloadObj = {};
-                                                            try { payloadObj = JSON.parse(s.payload || "{}"); } catch { /* noop */ }
-                                                            const payloadKeys = Object.keys(payloadObj);
-
-                                                            return (
-                                                                <s-table-row key={s.id}>
-                                                                    <s-table-cell>
-                                                                        <span style={{ color: "#6d7175", fontSize: "12px" }}>{idx + 1}</span>
-                                                                    </s-table-cell>
-                                                                    <s-table-cell>
-                                                                        <code style={{ fontSize: "11px" }}>{s.id.slice(0, 16)}…</code>
-                                                                    </s-table-cell>
-                                                                    <s-table-cell>
-                                                                        {s.customerId ? (
-                                                                            <code style={{ fontSize: "11px" }}>{s.customerId}</code>
-                                                                        ) : (
-                                                                            <span style={{ color: "#8c9196" }}>—</span>
-                                                                        )}
-                                                                    </s-table-cell>
-                                                                    <s-table-cell>
-                                                                        <s-badge tone={statusColor(s.status)}>
-                                                                            {statusLabel(s.status)}
-                                                                        </s-badge>
-                                                                    </s-table-cell>
-                                                                    <s-table-cell>
-                                                                        {s.metaobjectId ? (
-                                                                            <code style={{ fontSize: "10px" }}>{s.metaobjectId.split("/").pop()}</code>
-                                                                        ) : (
-                                                                            <span style={{ color: "#8c9196" }}>—</span>
-                                                                        )}
-                                                                    </s-table-cell>
-                                                                    <s-table-cell>
-                                                                        <span style={{ fontSize: "12px", color: "#6d7175" }}>{formatDate(s.createdAt)}</span>
-                                                                    </s-table-cell>
-                                                                    <s-table-cell>
-                                                                        <s-stack direction="block" gap="tight">
-                                                                            {payloadKeys.length === 0 ? (
-                                                                                <span style={{ color: "#8c9196", fontSize: "12px" }}>—</span>
-                                                                            ) : (
-                                                                                payloadKeys.slice(0, 4).map((k) => {
-                                                                                    const v = payloadObj[k];
-                                                                                    const display = Array.isArray(v) ? v.join(", ") : String(v ?? "").substring(0, 60);
-                                                                                    return (
-                                                                                        <span key={k} style={{ fontSize: "11px" }}>
-                                                                                            <strong>{k}:</strong>&nbsp;
-                                                                                            <span style={{ color: "#6d7175" }}>{display || "—"}</span>
-                                                                                        </span>
-                                                                                    );
-                                                                                })
-                                                                            )}
-                                                                            {payloadKeys.length > 4 && (
-                                                                                <span style={{ fontSize: "11px", color: "#8c9196" }}>+{payloadKeys.length - 4} more fields</span>
-                                                                            )}
-                                                                        </s-stack>
-                                                                    </s-table-cell>
-                                                                </s-table-row>
-                                                            );
-                                                        })}
-                                                    </s-table-body>
-                                                </s-table>
-                                            </s-box>
-                                        )}
                                     </s-box>
                                 );
                             })}

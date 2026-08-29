@@ -2,8 +2,70 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import db from "../db.server";
 
 // ============================================================================
-// UPLOAD FILE HELPER (STAGED UPLOAD -> S3/GCS -> FILE CREATE)
+// UPLOAD FILE HELPER (STAGED UPLOAD -> S3/GCS -> FILE CREATE -> WAIT FOR READY)
 // ============================================================================
+async function waitForShopifyFileReady(admin, fileId, maxAttempts = 15, delayMs = 800) {
+    if (!fileId) return null;
+
+    const fileQuery = `
+      query GetFileStatus($id: ID!) {
+        node(id: $id) {
+          __typename
+          ... on GenericFile {
+            id
+            fileStatus
+            url
+          }
+          ... on MediaImage {
+            id
+            fileStatus
+            image {
+              url
+            }
+          }
+          ... on Video {
+            id
+            fileStatus
+            sources {
+              url
+            }
+          }
+        }
+      }
+    `;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            const res = await admin.graphql(fileQuery, {
+                variables: { id: fileId },
+            });
+            const json = await res.json();
+            const node = json?.data?.node;
+
+            if (node) {
+                const status = node.fileStatus;
+                const finalUrl = node.url || node.image?.url || (node.sources && node.sources[0]?.url);
+
+                if (status === "READY" && finalUrl) {
+                    return finalUrl;
+                }
+
+                if (status === "FAILED") {
+                    console.warn(`Shopify file ${fileId} failed processing.`);
+                    break;
+                }
+            }
+        } catch (err) {
+            console.warn(`Error checking file status (attempt ${attempt + 1}):`, err?.message);
+        }
+
+        // Wait before next check
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    return null;
+}
+
 async function uploadFileToShopify(admin, file) {
     if (!file || typeof file.arrayBuffer !== "function" || !file.size) {
         return null;
@@ -15,6 +77,7 @@ async function uploadFileToShopify(admin, file) {
 
     let stagedResourceUrl = null;
     let fileId = null;
+    let finalUrl = null;
 
     try {
         // 1. Create Staged Upload Target
@@ -108,15 +171,23 @@ async function uploadFileToShopify(admin, file) {
             const created = fileCreateJson?.data?.fileCreate?.files?.[0];
             if (created?.id) {
                 fileId = created.id;
+                if (created.fileStatus === "READY") {
+                    finalUrl = created.url || created.image?.url;
+                }
             }
         } catch (createErr) {
             console.warn("fileCreate registration note:", createErr?.message);
         }
     }
 
+    // 4. Wait until Shopify finishes processing file and returns permanent CDN URL
+    if (fileId && !finalUrl) {
+        finalUrl = await waitForShopifyFileReady(admin, fileId, 15, 800);
+    }
+
     return {
         id: fileId,
-        url: stagedResourceUrl || `local_upload_${filename}`,
+        url: finalUrl || stagedResourceUrl || `local_upload_${filename}`,
         name: filename,
     };
 }
@@ -203,13 +274,10 @@ export async function handleFormSubmission({ request }) {
                 continue;
             }
 
-            const uploadedFiles = [];
-            for (const f of validFiles) {
-                const uploadResult = await uploadFileToShopify(admin, f);
-                if (uploadResult) {
-                    uploadedFiles.push(uploadResult);
-                }
-            }
+            const uploadResults = await Promise.all(
+                validFiles.map(f => uploadFileToShopify(admin, f))
+            );
+            const uploadedFiles = uploadResults.filter(Boolean);
 
             if (uploadedFiles.length > 0) {
                 const fileGids = uploadedFiles.map(u => u.id).filter(Boolean);
