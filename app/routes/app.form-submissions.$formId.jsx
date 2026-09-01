@@ -7,8 +7,25 @@ import db from "../db.server";
 // LOADER
 // ============================================================================
 export const loader = async ({ request, params }) => {
-    const { session } = await authenticate.admin(request);
+    const { session, admin } = await authenticate.admin(request);
     const { formId } = params;
+
+    const metaRes = await admin.graphql(`
+        #graphql
+        query {
+        shop {
+            metafield(namespace: "custom", key: "store_tags") {
+            jsonValue
+            }
+        }
+        }
+    `);
+    const metafieldData = await metaRes.json();
+    const storedSyncData = metafieldData?.data?.shop?.metafield?.jsonValue || {};
+    const storeTags = [];
+    for (let i in (storedSyncData || {})) {
+        storeTags.push(storedSyncData[i]);
+    }
 
     const form = await db.form.findFirst({
         where: { id: formId, shop: session.shop },
@@ -28,12 +45,15 @@ export const loader = async ({ request, params }) => {
             },
         },
     });
+    
+    // const market_catalog = storeTags.find(mObj => .tags.includes(mObj.tag));
+
 
     if (!form) {
         throw new Response("Form not found", { status: 404 });
     }
 
-    return { form };
+    return { form, storeTags };
 };
 
 // ============================================================================
@@ -60,11 +80,177 @@ function parsePayload(payloadStr) {
     try { return JSON.parse(payloadStr || "{}"); } catch { return {}; }
 }
 
+function getPayloadStringValue(payload, keys) {
+    const candidates = keys.flatMap((key) => [key, key.toLowerCase(), key.toUpperCase(), key.replace(/_/g, " ")]);
+    for (const candidate of candidates) {
+        const value = payload?.[candidate];
+        if (typeof value === "string" && value.trim()) return value.trim();
+        if (typeof value === "number") return String(value);
+    }
+
+    for (const value of Object.values(payload || {})) {
+        if (typeof value === "string" && value.trim() && keys.some((key) => value.toLowerCase().includes(key.toLowerCase()))) {
+            return value.trim();
+        }
+    }
+
+    for (const [key, value] of Object.entries(payload || {})) {
+        if (typeof value === "string" && value.trim()) {
+            const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const matched = keys.some((candidate) => normalizedKey.includes(candidate.toLowerCase().replace(/[^a-z0-9]/g, "")));
+            if (matched) return value.trim();
+        }
+    }
+
+    return "";
+}
+
+function getPayloadNameFields(payload) {
+    const firstName = getPayloadStringValue(payload, ["first_name", "customer_first_name", "first name", "firstname"]);
+    const lastName = getPayloadStringValue(payload, ["last_name", "customer_last_name", "last name", "lastname"]);
+    const companyName = getPayloadStringValue(payload, ["company_name", "customer_company_name", "company name", "company"]);
+    return { firstName, lastName, companyName };
+}
+
+export const action = async ({ request, params }) => {
+    try {
+        const { admin } = await authenticate.admin(request);
+        const formData = await request.formData();
+        const intent = (formData.get("intent") || "").toString();
+        const submissionId = (formData.get("submissionId") || "").toString();
+
+        if (!submissionId) {
+            return Response.json({ success: false, error: "Missing submission ID." }, { status: 400 });
+        }
+
+        const submission = await db.formSubmission.findUnique({
+            where: { id: submissionId },
+            include: { form: true },
+        });
+
+        if (!submission) {
+            return Response.json({ success: false, error: "Submission not found." }, { status: 404 });
+        }
+
+        if (intent === "reject") {
+            if (submission.metaobjectId) {
+                try {
+                    const deleteMutation = `
+                        mutation DeleteMetaobject($id: ID!) {
+                            metaobjectDelete(id: $id) {
+                                deletedId
+                                userErrors {
+                                    field
+                                    message
+                                }
+                            }
+                        }
+                    `;
+                    const metaRes = await admin.graphql(deleteMutation, { variables: { id: submission.metaobjectId } });
+                    const metaJson = await metaRes.json();
+                    const userErrors = metaJson?.data?.metaobjectDelete?.userErrors || [];
+                    if (userErrors.length > 0) {
+                        console.warn("Metaobject delete userErrors on submission reject:", userErrors);
+                    }
+                } catch (metaErr) {
+                    console.warn("Metaobject delete warning on reject:", metaErr?.message);
+                }
+            }
+
+            await db.formSubmission.delete({ where: { id: submission.id } });
+            return Response.json({ success: true, message: "Submission rejected and removed." }, { status: 200 });
+        }
+
+        if (intent === "approve") {
+            const payload = parsePayload(submission.payload);
+            const customerEmail = getPayloadStringValue(payload, ["email", "customer_email", "business_email", "Email"]);
+            if (!customerEmail || !customerEmail.includes("@")) {
+                return Response.json({ success: false, error: "Missing valid email for customer approval." }, { status: 400 });
+            }
+
+            const { firstName, lastName } = getPayloadNameFields(payload);
+            const customerTag = (payload.customer_tag || "").toString().trim();
+            const tags = customerTag ? [customerTag] : [];
+
+            const customerCreateMutation = `
+                mutation CreateCustomer($input: CustomerInput!) {
+                    customerCreate(input: $input) {
+                        customer {
+                            id
+                            email
+                            firstName
+                            lastName
+                            emailMarketingConsent {
+                                marketingState
+                                marketingOptInLevel
+                            }
+                        }
+                        userErrors {
+                            field
+                            message
+                        }
+                    }
+                }
+            `;
+
+            try {
+                const response = await admin.graphql(customerCreateMutation, {
+                    variables: {
+                        input: {
+                            email: customerEmail,
+                            firstName: firstName || undefined,
+                            lastName: lastName || undefined,
+                            tags: tags.length ? tags : undefined,
+                            emailMarketingConsent: {
+                                marketingState: "SUBSCRIBED",
+                                marketingOptInLevel: "SINGLE_OPT_IN",
+                                consentUpdatedAt: new Date().toISOString(),
+                            },
+                        },
+                    },
+                });
+
+                const json = await response.json();
+                const userErrors = json?.data?.customerCreate?.userErrors || [];
+
+                if (userErrors.length > 0) {
+                    const summary = userErrors.map((error) => error.message).join(", ");
+                    return Response.json({ success: false, error: summary || "Customer creation failed." }, { status: 400 });
+                }
+
+                const createdCustomer = json?.data?.customerCreate?.customer;
+                if (!createdCustomer?.id) {
+                    return Response.json({ success: false, error: "Customer creation did not return a customer ID." }, { status: 400 });
+                }
+
+                await db.formSubmission.delete({ where: { id: submission.id } });
+                return Response.json({ success: true, message: "Submission approved and customer created." }, { status: 200 });
+            } catch (graphqlError) {
+                const errText =
+                    graphqlError?.errors?.map((e) => e?.message || String(e)).join(", ") ||
+                    graphqlError?.message ||
+                    "Shopify customer creation failed.";
+
+                console.error("Shopify customerCreate GraphQL error on approve:", graphqlError);
+                return Response.json({ success: false, error: errText }, { status: 400 });
+            }
+        }
+
+        return Response.json({ success: false, error: "Invalid action." }, { status: 400 });
+    } catch (actionError) {
+        // Catch any unhandled errors and always return JSON
+        console.error("[Action Error] Unhandled error in submission action:", actionError);
+        const errorMessage = actionError instanceof Error ? actionError.message : "An unexpected error occurred.";
+        return Response.json({ success: false, error: errorMessage }, { status: 500 });
+    }
+};
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
 export default function FormSubmissions() {
-    const { form } = useLoaderData();
+    const { form, storeTags } = useLoaderData();
+    console.log(storeTags);
     const navigate = useNavigate();
 
     const submissions = form.formSubmissions || [];
@@ -72,6 +258,77 @@ export default function FormSubmissions() {
 
     const [sortOrder, setSortOrder] = useState("latest");
     const [selectedSub, setSelectedSub] = useState(null);
+    const [actioningId, setActioningId] = useState(null);
+
+    const handleSubmissionAction = async (submissionId, intent) => {
+        const isApprove = intent === "approve";
+        setActioningId(`${intent}:${submissionId}`);
+
+        try {
+            const formData = new FormData();
+            formData.append("intent", intent);
+            formData.append("submissionId", submissionId);
+
+            // Use explicit path construction instead of window.location.pathname
+            const currentUrl = new URL(window.location.href);
+            const actionPath = currentUrl.pathname;
+
+            const res = await fetch(actionPath, {
+                method: "POST",
+                body: formData,
+            });
+
+            let payload = {};
+            try {
+                payload = await res.json();
+            } catch (parseErr) {
+                console.error("Failed to parse response JSON:", parseErr);
+                console.error("Response status:", res.status);
+                console.error("Response ok:", res.ok);
+                payload = {};
+            }
+
+            console.log("[Submission Action] Status:", res.status, "OK:", res.ok, "Payload:", payload);
+
+            // Validate success: HTTP 200 + explicit success flag
+            const isSuccess = res.status === 200 && payload?.success === true;
+            
+            if (!isSuccess) {
+                const serverError =
+                    typeof payload?.error === "string"
+                        ? payload.error
+                        : Array.isArray(payload?.error)
+                            ? payload.error.join(", ")
+                            : typeof payload?.message === "string"
+                                ? payload.message
+                                : null;
+
+                console.error("[Submission Action] Failed with payload:", { status: res.status, ok: res.ok, success: payload?.success, error: serverError, payload });
+                throw new Error(serverError || `Unable to ${isApprove ? "approve" : "reject"} submission.`);
+            }
+
+            // Success: show appropriate toast and reload
+            console.log("[Submission Action] Success - Showing toast and reloading");
+            if (typeof shopify !== "undefined" && shopify.toast) {
+                shopify.toast.show(
+                    isApprove
+                        ? "Submission approved and customer created."
+                        : "Submission rejected and removed."
+                );
+            }
+
+            // Give toast time to show before reload
+            setTimeout(() => window.location.reload(), 500);
+        } catch (error) {
+            const message = error?.message || "This submission could not be processed.";
+            console.error("[Submission Action] Exception caught:", error);
+            if (typeof shopify !== "undefined" && shopify.toast) {
+                shopify.toast.show(message);
+            }
+        } finally {
+            setActioningId(null);
+        }
+    };
 
     const sorted = useMemo(() => {
         const copy = [...submissions];
@@ -234,13 +491,32 @@ export default function FormSubmissions() {
                                                 </s-table-cell>
 
                                                 <s-table-cell>
-                                                    <s-button
-                                                        variant="secondary"
-                                                        size="slim"
-                                                        onClick={() => openDetail(sub)}
-                                                    >
-                                                        Detail
-                                                    </s-button>
+                                                    <s-stack direction="inline" gap="small" alignItems="center">
+                                                        <s-button
+                                                            variant="primary"
+                                                            size="slim"
+                                                            disabled={actioningId === `approve:${sub.id}`}
+                                                            loading={actioningId === `approve:${sub.id}` ? true : false}
+                                                            onClick={() => handleSubmissionAction(sub.id, "approve")}
+                                                        >
+                                                            {actioningId === `approve:${sub.id}` ? "Approve" : "Approve"}
+                                                        </s-button>
+                                                        <s-button
+                                                            variant="secondary"
+                                                            size="slim"
+                                                            disabled={actioningId === `reject:${sub.id}`}
+                                                            onClick={() => handleSubmissionAction(sub.id, "reject")}
+                                                        >
+                                                            {actioningId === `reject:${sub.id}` ? "Rejecting..." : "Reject"}
+                                                        </s-button>
+                                                        <s-button
+                                                            variant="secondary"
+                                                            size="slim"
+                                                            onClick={() => openDetail(sub)}
+                                                        >
+                                                            Detail
+                                                        </s-button>
+                                                    </s-stack>
                                                 </s-table-cell>
                                             </s-table-row>
                                         );
@@ -304,13 +580,29 @@ export default function FormSubmissions() {
                                             border="base"
                                             borderRadius="base"
                                         >
-                                            <s-stack direction="inline" gap="base">
-                                                <span style={{ fontSize: "13px", textTransform: "uppercase" }}>
-                                                    {label}:
-                                                </span>
-                                                <span style={{ fontSize: "13px", wordBreak: "break-word" }}>
-                                                    {(displayVal.startsWith('https://cdn.shopify.com')) ? ((displayVal.split(',').length === 1) ? (<s-link href={displayVal} target="_blank">{displayVal}</s-link>) : (displayVal.split(',').map(link_dv => <s-link href={link_dv} target="_blank">{link_dv}</s-link>))) : (displayVal || "—")}
-                                                </span>
+                                            <s-stack direction="inline" gap="none base">
+                                                {
+                                                    (label.toLowerCase().trim() === 'customer_tag') ? (
+                                                        <>
+                                                            <span style={{ fontSize: "13px", textTransform: "uppercase" }}>
+                                                                {label}:
+                                                            </span>
+                                                            <span style={{ fontSize: "13px", wordBreak: "break-word" }}>
+                                                                <span>{displayVal}</span>
+                                                            </span>
+                                                            {(storeTags.find(myObj => myObj.tag === displayVal).market) ? (<span style={{display:"flex",flexWrap:'wrap', gap: '8px'}}><span style={{fontSize: '10px'}}>market: {storeTags.find(myObj => myObj.tag === displayVal).market}</span> <span style={{fontSize: '10px'}}>catalog: {storeTags.find(myObj => myObj.tag === displayVal).catalog}</span></span>) : (displayVal)}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <span style={{ fontSize: "13px", textTransform: "uppercase" }}>
+                                                                {label}:
+                                                            </span>
+                                                            <span style={{ fontSize: "13px", wordBreak: "break-word" }}>
+                                                                {(displayVal.startsWith('https://cdn.shopify.com')) ? ((displayVal.split(',').length === 1) ? (<s-link href={displayVal} target="_blank">{displayVal}</s-link>) : (displayVal.split(',').map(link_dv => <s-link href={link_dv} target="_blank">{link_dv}</s-link>))) : (displayVal || "—")}
+                                                            </span>
+                                                        </>
+                                                    )
+                                                }
                                             </s-stack>
                                         </s-box>
                                     );

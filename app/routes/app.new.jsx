@@ -35,7 +35,7 @@ function mapToShopifyMetaobjectType(field) {
 // ============================================================================
 // 2. HELPER: GENERATE CLEAN CLASS-BASED HTML & CSS
 // ============================================================================
-function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel, policies) {
+function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel, policies, customerTag) {
     const css = `
     .b2b-form-wrapper { max-width: 600px; margin: 0 auto; padding: 28px 24px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff; border: 1px solid #e1e3e5; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
     .b2b-form-title { font-size: 22px; font-weight: 700; color: #1a1a1a; text-align: center; margin: 0 0 8px 0; }
@@ -72,11 +72,15 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
         let controlHtml = '';
 
         switch (field.type) {
+            case 'customer_first_name':
+            case 'customer_last_name':
+            case 'customer_company_name':
             case 'text':
             case 'email':
             case 'number':
             case 'phone':
-                controlHtml = `<input type="${field.type === 'phone' ? 'tel' : field.type}" name="${field.id}" class="b2b-input" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''} />`;
+                const inputType = field.type === 'phone' ? 'tel' : field.type === 'email' ? 'email' : 'text';
+                controlHtml = `<input type="${inputType}" name="${field.id}" class="b2b-input" placeholder="${field.placeholder || ''}" ${field.required ? 'required' : ''} />`;
                 break;
 
             case 'date':
@@ -148,6 +152,7 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
         <input type="hidden" name="form_id" value="${formId}" />
         <input type="hidden" name="shop" value="{{ shop.permanent_domain }}" />
         <input type="hidden" name="customer_id" value="{{ customer.id }}" />
+        <input type="hidden" name="customer_tag" value="${customerTag || ''}" />
         
         <div class="b2b-form-fields">
           ${fieldsHtml}
@@ -247,10 +252,19 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
 // 3. REMIX / REACT ROUTER LOADER
 // ============================================================================
 export const loader = async ({ request }) => {
-    await authenticate.admin(request);
+    const { session } = await authenticate.admin(request);
     const url = new URL(request.url);
     const formName = url.searchParams.get('name') || 'New B2B Form';
-    return { formName };
+
+    const tagRows = await db.tagData.findMany({
+        where: { shop: session.shop },
+        select: { tag: true },
+        orderBy: { tag: 'asc' },
+    });
+
+    const customerTagOptions = [...new Set(tagRows.map((row) => row.tag).filter(Boolean))];
+
+    return { formName, customerTagOptions };
 };
 
 // ============================================================================
@@ -284,7 +298,7 @@ export const action = async ({ request }) => {
         );
     }
 
-    const { title, description, buttonlabel, policies, fields } = body ?? {};
+    const { title, description, buttonlabel, policies, fields, customerTag } = body ?? {};
 
     if (!Array.isArray(fields) || fields.length === 0) {
         return Response.json(
@@ -294,6 +308,42 @@ export const action = async ({ request }) => {
     }
 
     try {
+        const configuredTags = await db.tagData.findMany({
+            where: { shop: session.shop },
+            select: { tag: true },
+        });
+        const validCustomerTags = [...new Set(configuredTags.map((row) => row.tag).filter(Boolean))];
+
+        if (validCustomerTags.length === 0) {
+            return Response.json(
+                {
+                    success: false,
+                    errors: [{ message: "Please create at least one Customer Tag on the home page before saving this form." }],
+                },
+                { status: 400 },
+            );
+        }
+
+        const selectedCustomerTag = typeof customerTag === 'string' ? customerTag.trim() : '';
+        if (!selectedCustomerTag) {
+            return Response.json(
+                {
+                    success: false,
+                    errors: [{ message: "Customer Tag is required. Please select a configured tag before saving the form." }],
+                },
+                { status: 400 },
+            );
+        }
+
+        if (!validCustomerTags.includes(selectedCustomerTag)) {
+            return Response.json(
+                {
+                    success: false,
+                    errors: [{ message: "The selected Customer Tag is no longer available. Please choose a valid configured tag." }],
+                },
+                { status: 400 },
+            );
+        }
         const uniqueHash = `${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
         const formId = `form_${uniqueHash}`;
         const metaobjectType = `b2b_${uniqueHash}`;
@@ -412,7 +462,7 @@ export const action = async ({ request }) => {
         }
 
         // Generate class-based HTML & CSS
-        const { html, css } = generateFormHtmlAndCss(formId, title, description, fields, buttonlabel, policies);
+        const { html, css } = generateFormHtmlAndCss(formId, title, description, fields, buttonlabel, policies, selectedCustomerTag);
 
         // Store Form and mappings in Prisma DB
         let savedForm;
@@ -482,6 +532,9 @@ export const action = async ({ request }) => {
 // 5. REACT UI COMPONENT (FORM BUILDER & LIVE PREVIEW)
 // ============================================================================
 const FIELD_TYPES = [
+    { type: "customer_first_name", title: "First Name", description: "Customer first name field for later approval flow", defaultLabel: "First Name", defaultPlaceholder: "Enter first name...", hasOptions: false, icon: "text-font", customerFieldKey: "first_name" },
+    { type: "customer_last_name", title: "Last Name", description: "Customer last name field for later approval flow", defaultLabel: "Last Name", defaultPlaceholder: "Enter last name...", hasOptions: false, icon: "text-font", customerFieldKey: "last_name" },
+    { type: "customer_company_name", title: "Company Name", description: "Customer company name field for later approval flow", defaultLabel: "Company Name", defaultPlaceholder: "Enter company name...", hasOptions: false, icon: "text-font", customerFieldKey: "company_name" },
     { type: "email", title: "Email", description: "Email address input", defaultLabel: "Email Address", defaultPlaceholder: "Enter email address...", hasOptions: false, icon: "email" },
     { type: "text", title: "Single-line text", description: "Short single-line text input", defaultLabel: "Full Name / Company Representative", defaultPlaceholder: "Enter full name...", hasOptions: false, icon: "text-font" },
     { type: "select", title: "Dropdown list", description: "Select one option from a dropdown menu", defaultLabel: "Business Entity Type", defaultPlaceholder: "Select your business type...", hasOptions: true, defaultOptions: [{ id: "opt_1", label: "Wholesaler / Distributor", value: "wholesaler" }, { id: "opt_2", label: "Retail Storefront", value: "retailer" }, { id: "opt_3", label: "Corporate Account", value: "corporate" }], icon: "caret-down" },
@@ -502,15 +555,17 @@ const INITIAL_BUILDER_STATE = {
     buttonlabel: 'Submit Application',
     policies: 'By signing up, you agree to receive marketing emails. View our privacy policy and terms of service for more info.',
     fields: [
+        { id: "customer_first_name", type: "customer_first_name", label: "First Name", placeholder: "Enter first name...", required: false, options: [], uniqueKey: "first_name" },
+        { id: "customer_last_name", type: "customer_last_name", label: "Last Name", placeholder: "Enter last name...", required: false, options: [], uniqueKey: "last_name" },
+        { id: "customer_company_name", type: "customer_company_name", label: "Company Name", placeholder: "Enter company name...", required: false, options: [], uniqueKey: "company_name" },
         { id: "f_email", type: "email", label: "Business Email", placeholder: "Enter email address...", required: true, options: [] },
-        { id: "f_name", type: "text", label: "Company / Contact Name", placeholder: "Enter company or representative name...", required: true, options: [] },
         { id: "f_type", type: "select", label: "Business Entity Type", placeholder: "Select your business type...", required: true, options: [{ id: "opt_1", label: "Wholesaler / Reseller", value: "wholesaler" }, { id: "opt_2", label: "Corporate Account", value: "corporate" }, { id: "opt_3", label: "Retail Partner", value: "retail_partner" }] },
         { id: "f_size", type: "radio", label: "Expected Order Volume", placeholder: "", required: false, options: [{ id: "opt_r1", label: "$5,000 - $20,000 / month", value: "tier_1" }, { id: "opt_r2", label: "$20,000 - $100,000 / month", value: "tier_2" }, { id: "opt_r3", label: "$100,000+ / month", value: "tier_3" }] }
     ]
 };
 
 export default function New() {
-    const { formName } = useLoaderData();
+    const { formName, customerTagOptions = [] } = useLoaderData();
     const actionData = useActionData();
     const submit = useSubmit();
     const navigate = useNavigate();
@@ -524,6 +579,7 @@ export default function New() {
     const [buttonlabel, setButtonLabel] = useState(INITIAL_BUILDER_STATE.buttonlabel);
     const [policies, setPolicies] = useState(INITIAL_BUILDER_STATE.policies);
     const [fields, setFields] = useState(INITIAL_BUILDER_STATE.fields);
+    const [selectedCustomerTag, setSelectedCustomerTag] = useState("");
 
     const [savedState, setSavedState] = useState(INITIAL_BUILDER_STATE);
     const [activeConfigId, setActiveConfigId] = useState(null);
@@ -537,7 +593,7 @@ export default function New() {
     const isDirty = JSON.stringify({ title, description, buttonlabel, policies, fields }) !== JSON.stringify(savedState);
     const showSaveBar = hasInteracted || isDirty;
 
-    // Show/hide native Save Bar safely
+    // Show/hide the embedded app save bar using the programmatic UI web component API
     useEffect(() => {
         try {
             if (typeof shopify !== "undefined" && shopify.saveBar) {
@@ -578,7 +634,21 @@ export default function New() {
     }, [actionData, title, description, buttonlabel, policies, fields]);
 
     const handleSaveForm = () => {
-        const payload = { title, description, buttonlabel, policies, fields };
+        if (customerTagOptions.length === 0) {
+            if (typeof shopify !== "undefined" && shopify.toast) {
+                shopify.toast.show("Please create at least one Customer Tag on the home page before saving the form.");
+            }
+            return;
+        }
+
+        if (!selectedCustomerTag) {
+            if (typeof shopify !== "undefined" && shopify.toast) {
+                shopify.toast.show("Customer Tag is required. Please select a configured tag.");
+            }
+            return;
+        }
+
+        const payload = { title, description, buttonlabel, policies, fields, customerTag: selectedCustomerTag };
         submit(payload, { method: "post", encType: "application/json" });
     };
 
@@ -593,7 +663,10 @@ export default function New() {
     };
 
     const addField = (fieldTypeDef) => {
-        const newId = `field_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+        const newId = fieldTypeDef.customerFieldKey
+            ? `customer_${fieldTypeDef.customerFieldKey}`
+            : `field_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 6)}`;
+
         const newField = {
             id: newId,
             type: fieldTypeDef.type,
@@ -603,9 +676,17 @@ export default function New() {
             multiple: Boolean(fieldTypeDef.multiple),
             options: fieldTypeDef.hasOptions
                 ? fieldTypeDef.defaultOptions.map((opt, i) => ({ ...opt, id: `opt_${Date.now().toString(36)}_${i}` }))
-                : []
+                : [],
+            uniqueKey: fieldTypeDef.customerFieldKey || null,
         };
-        setFields(prev => [...prev, newField]);
+
+        setFields(prev => {
+            const hasExisting = prev.some((item) => item.uniqueKey === newField.uniqueKey || item.id === newField.id);
+            if (hasExisting) {
+                return prev;
+            }
+            return [...prev, newField];
+        });
         setIsPickerOpen(false);
         setActiveConfigId(newId);
         setHasInteracted(true);
@@ -709,22 +790,26 @@ export default function New() {
 
             <s-page heading={formName || "Create B2B Form"}>
                 {/* Native App Bridge Save Bar */}
-                <s-save-bar id={SAVE_BAR_ID} ref={saveBarRef} hidden>
-                    <s-button
+                <ui-save-bar id={SAVE_BAR_ID} ref={saveBarRef} hidden>
+                    <button
+                        type="button"
                         variant="primary"
                         onClick={handleSaveForm}
-                        loading={isSaving ? "" : undefined}
+                        loading={isSaving ? true : false}
+                        disabled={isSaving}
                     >
                         Save Form
-                    </s-button>
-                    <s-button
+                    </button>
+                    <button
+                        type="button"
                         variant="secondary"
                         onClick={handleCancelOrDiscard}
+                        loading={isSaving ? true : false}
                         disabled={isSaving}
                     >
                         Discard
-                    </s-button>
-                </s-save-bar>
+                    </button>
+                </ui-save-bar>
 
                 {/* Success Banner */}
                 {actionData?.success && (
@@ -761,13 +846,6 @@ export default function New() {
                 >
                     <s-stack direction="inline" justifyContent="space-between" alignItems="center" padding="none none base none">
                         <s-text tone="subdued">Configure form fields, inputs, and submission requirements.</s-text>
-                        <s-button
-                            variant="primary"
-                            onClick={handleSaveForm}
-                            loading={isSaving ? "" : undefined}
-                        >
-                            {isSaving ? "Saving..." : "Save Form"}
-                        </s-button>
                     </s-stack>
 
                     <s-text-field
@@ -795,6 +873,7 @@ export default function New() {
                                 const typeMeta = FIELD_TYPES.find(t => t.type === field.type) || FIELD_TYPES[0];
                                 const isSelected = activeConfigId === field.id;
                                 const isEmailField = field.id === "f_email";
+                                const isCustomerMetaField = ["customer_first_name", "customer_last_name", "customer_company_name"].includes(field.type);
 
                                 return (
                                     <div key={field.id}>
@@ -910,7 +989,7 @@ export default function New() {
                                                     <s-checkbox
                                                         label="Required field (merchant must provide this before submitting)"
                                                         checked={!!field.required}
-                                                        disabled={isEmailField}
+                                                        disabled={isEmailField || isCustomerMetaField}
                                                         onChange={(e) => updateField(field.id, { required: e.target.checked })}
                                                     ></s-checkbox>
                                                 </s-box>
@@ -1023,12 +1102,30 @@ export default function New() {
                     </s-box>
 
                     <s-box padding="base none none none">
+                        <s-select
+                            label="Customer Tag"
+                            helpText="Only tags configured on the home page are available. This value is required before the form can be saved."
+                            value={selectedCustomerTag}
+                            onChange={(e) => {
+                                setSelectedCustomerTag(e.target.value || "");
+                                setHasInteracted(true);
+                            }}
+                            required
+                        >
+                            <s-option value="">Select a customer tag...</s-option>
+                            {customerTagOptions.map((tag) => (
+                                <s-option key={tag} value={tag}>{tag}</s-option>
+                            ))}
+                        </s-select>
+                    </s-box>
+
+                    <s-box padding="base none none none">
                         <s-button
                             variant="primary"
                             onClick={handleSaveForm}
-                            loading={isSaving ? "" : undefined}
+                            loading={isSaving ? true : false}
                         >
-                            {isSaving ? "Saving Form..." : "Save Form & Create Metaobject"}
+                            {isSaving ? "Saving Form..." : "Save Form"}
                         </s-button>
                     </s-box>
                 </s-section>
@@ -1068,7 +1165,7 @@ export default function New() {
                                                     {field.required && <span className="preview-required-star">*</span>}
                                                 </label>
 
-                                                {field.type === 'text' && <input type="text" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
+                                                {(field.type === 'text' || field.type === 'customer_first_name' || field.type === 'customer_last_name' || field.type === 'customer_company_name') && <input type="text" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
                                                 {field.type === 'email' && <input type="email" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
                                                 {field.type === 'phone' && <input type="tel" className="preview-input" placeholder={field.placeholder || ''} readOnly />}
                                                 {field.type === 'number' && <input type="number" className="preview-input" placeholder={field.placeholder || ''} readOnly />}

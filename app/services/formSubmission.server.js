@@ -207,6 +207,7 @@ export async function handleFormSubmission({ request }) {
     const formId = formData.get("form_id");
     const submittedShop = formData.get("shop");
     const customerId = formData.get("customer_id") || null;
+    const customerTag = (formData.get("customer_tag") || "").toString().trim();
 
     let shopDomain = null;
     let admin = null;
@@ -254,7 +255,11 @@ export async function handleFormSubmission({ request }) {
         return Response.json({ success: false, error: "Form not found." }, { status: 404 });
     }
 
-    const storedValues = {};
+    if (!customerTag) {
+        return Response.json({ success: false, error: "Customer tag is required before this form can be submitted." }, { status: 422 });
+    }
+
+    const storedValues = { customer_tag: customerTag };
     const metaobjectFields = [];
     const missing = [];
 
