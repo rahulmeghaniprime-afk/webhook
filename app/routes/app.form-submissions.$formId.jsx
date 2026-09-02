@@ -112,6 +112,25 @@ function getPayloadNameFields(payload) {
     return { firstName, lastName, companyName };
 }
 
+function handleizeMetafieldKey(label, fallback) {
+    const normalized = String(label || fallback || "field")
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 64);
+
+    return normalized || `field_${String(fallback || "value").replace(/[^a-z0-9]/gi, "").slice(0, 54)}`;
+}
+
+function getGraphqlUserErrors(result, operation) {
+    const errors = result?.errors?.length
+        ? result.errors
+        : result?.data?.[operation]?.userErrors || [];
+    return errors.map((error) => error.message).filter(Boolean);
+}
+
 export const action = async ({ request, params }) => {
     try {
         const { session, admin } = await authenticate.admin(request);
@@ -125,7 +144,7 @@ export const action = async ({ request, params }) => {
 
         const submission = await db.formSubmission.findUnique({
             where: { id: submissionId },
-            include: { form: true },
+            include: { form: { include: { FieldMapping: { orderBy: { id: "asc" } } } } },
         });
 
         if (!submission || submission.form.shop !== session.shop || submission.formId !== params.formId) {
@@ -170,61 +189,142 @@ export const action = async ({ request, params }) => {
 
             const { firstName, lastName } = getPayloadNameFields(payload);
             const customerTag = (payload.customer_tag || "").toString().trim();
-            const tags = customerTag ? [customerTag] : [];
+            const customerLookupQuery = `
+                query FindCustomerByEmail($query: String!) {
+                    customers(first: 1, query: $query) {
+                        nodes { id }
+                    }
+                }
+            `;
 
             const customerCreateMutation = `
                 mutation CreateCustomer($input: CustomerInput!) {
                     customerCreate(input: $input) {
-                        customer {
-                            id
-                            email
-                            firstName
-                            lastName
-                            emailMarketingConsent {
-                                marketingState
-                                marketingOptInLevel
-                            }
-                        }
-                        userErrors {
-                            field
-                            message
-                        }
+                        customer { id }
+                        userErrors { field message }
+                    }
+                }
+            `;
+
+            const tagsAddMutation = `
+                mutation AddCustomerTags($id: ID!, $tags: [String!]!) {
+                    tagsAdd(id: $id, tags: $tags) {
+                        node { id }
+                        userErrors { field message }
+                    }
+                }
+            `;
+
+            const metafieldsSetMutation = `
+                mutation SetCustomerMetafields($metafields: [MetafieldsSetInput!]!) {
+                    metafieldsSet(metafields: $metafields) {
+                        metafields { key value }
+                        userErrors { field message code }
                     }
                 }
             `;
 
             try {
-                const response = await admin.graphql(customerCreateMutation, {
-                    variables: {
-                        input: {
-                            email: customerEmail,
-                            firstName: firstName || undefined,
-                            lastName: lastName || undefined,
-                            tags: tags.length ? tags : undefined,
-                            emailMarketingConsent: {
-                                marketingState: "SUBSCRIBED",
-                                marketingOptInLevel: "SINGLE_OPT_IN",
-                                consentUpdatedAt: new Date().toISOString(),
-                            },
-                        },
-                    },
+                const lookupResponse = await admin.graphql(customerLookupQuery, {
+                    variables: { query: `email:${customerEmail}` },
                 });
-
-                const json = await response.json();
-                const userErrors = json?.data?.customerCreate?.userErrors || [];
-
-                if (userErrors.length > 0) {
-                    const summary = userErrors.map((error) => error.message).join(", ");
-                    return Response.json({ success: false, error: summary || "Customer creation failed." }, { status: 400 });
+                const lookupJson = await lookupResponse.json();
+                const lookupErrors = getGraphqlUserErrors(lookupJson, "customers");
+                if (lookupErrors.length) {
+                    return Response.json({ success: false, error: lookupErrors.join(", ") }, { status: 400 });
                 }
 
-                const createdCustomer = json?.data?.customerCreate?.customer;
-                if (!createdCustomer?.id) {
-                    return Response.json({ success: false, error: "Customer creation did not return a customer ID." }, { status: 400 });
+                let customer = lookupJson?.data?.customers?.nodes?.[0] || null;
+                let customerCreated = false;
+
+                if (!customer?.id) {
+                    const response = await admin.graphql(customerCreateMutation, {
+                        variables: {
+                            input: {
+                                email: customerEmail,
+                                firstName: firstName || undefined,
+                                lastName: lastName || undefined,
+                                emailMarketingConsent: {
+                                    marketingState: "SUBSCRIBED",
+                                    marketingOptInLevel: "SINGLE_OPT_IN",
+                                    consentUpdatedAt: new Date().toISOString(),
+                                },
+                            },
+                        },
+                    });
+                    const json = await response.json();
+                    const userErrors = getGraphqlUserErrors(json, "customerCreate");
+                    if (userErrors.length) {
+                        return Response.json({ success: false, error: userErrors.join(", ") }, { status: 400 });
+                    }
+                    customer = json?.data?.customerCreate?.customer;
+                    customerCreated = true;
+                }
+
+                if (!customer?.id) {
+                    return Response.json({ success: false, error: "Shopify did not return a customer ID." }, { status: 400 });
+                }
+
+                if (customerTag) {
+                    const tagResponse = await admin.graphql(tagsAddMutation, {
+                        variables: { id: customer.id, tags: [customerTag] },
+                    });
+                    const tagJson = await tagResponse.json();
+                    const tagErrors = getGraphqlUserErrors(tagJson, "tagsAdd");
+                    if (tagErrors.length) {
+                        return Response.json({ success: false, error: tagErrors.join(", ") }, { status: 400 });
+                    }
+                }
+
+                const usedMetafieldKeys = new Set();
+                const metafields = submission.form.FieldMapping
+                    .map((mapping) => ({
+                        label: mapping.fieldLabel,
+                        fallback: mapping.metaobjectKey,
+                        value: payload?.[mapping.metaobjectKey],
+                    }))
+                    .concat({ label: "customer_tag", fallback: "customer_tag", value: payload?.customer_tag })
+                    .map(({ label, fallback, value }) => {
+                        if (value === undefined || value === null || value === "") return null;
+
+                        const baseKey = handleizeMetafieldKey(label, fallback);
+                        let key = baseKey;
+                        let duplicateIndex = 2;
+                        while (usedMetafieldKeys.has(key)) {
+                            const suffix = `_${duplicateIndex++}`;
+                            key = `${baseKey.slice(0, 64 - suffix.length)}${suffix}`;
+                        }
+                        usedMetafieldKeys.add(key);
+
+                        return {
+                            ownerId: customer.id,
+                            key,
+                            type: "json",
+                            value: JSON.stringify(value),
+                        };
+                    })
+                    .filter(Boolean);
+
+                if (metafields.length) {
+                    for (let index = 0; index < metafields.length; index += 25) {
+                        const metafieldResponse = await admin.graphql(metafieldsSetMutation, {
+                            variables: { metafields: metafields.slice(index, index + 25) },
+                        });
+                        const metafieldJson = await metafieldResponse.json();
+                        const metafieldErrors = getGraphqlUserErrors(metafieldJson, "metafieldsSet");
+                        if (metafieldErrors.length) {
+                            return Response.json({ success: false, error: metafieldErrors.join(", ") }, { status: 400 });
+                        }
+                    }
                 }
 
                 await db.formSubmission.delete({ where: { id: submission.id } });
-                return Response.json({ success: true, message: "Submission approved and customer created." }, { status: 200 });
+                return Response.json({
+                    success: true,
+                    message: customerCreated
+                        ? "Submission approved and customer created with form data."
+                        : "Submission approved and existing customer updated with form data.",
+                }, { status: 200 });
             } catch (graphqlError) {
                 const errText =
                     graphqlError?.errors?.map((e) => e?.message || String(e)).join(", ") ||

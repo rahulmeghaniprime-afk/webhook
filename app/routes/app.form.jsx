@@ -166,6 +166,12 @@ export default function Form() {
         // fetcher.submit(fd, {method: "POST"});
         window.top.location.href = url;
     }
+    const copytoclipboard = (f_id) => {
+        navigator.clipboard.writeText(`https://${shop}/apps/wholesale-form/${f_id}`);
+        shopify.toast.show("Form link copied to clipboard!", {
+            duration: 1000
+        });
+    }
 
     return (
         <>
@@ -175,9 +181,11 @@ export default function Form() {
                         <s-paragraph tone="neutral">
                             Create custom B2B application and registration forms that automatically create Shopify Metaobjects upon submission.
                         </s-paragraph>
-                        <s-button onClick={redirectFormapp} variant="primary">
-                            + Create New Form
-                        </s-button>
+                        {(forms.length < 10) && (
+                            <s-button onClick={redirectFormapp} variant="primary">
+                                + Create New Form
+                            </s-button>
+                        )}
                     </s-stack>
 
                     {forms.length === 0 ? (
@@ -219,7 +227,7 @@ export default function Form() {
                                                     </s-paragraph>
                                                     <span style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
                                                         Form Link: <code style={{ fontSize: "11px" }}>/apps/wholesale-form/{f.id}</code>
-                                                        <s-button icon="paste" onClick={() => navigator.clipboard.writeText(`https://${shop}/apps/wholesale-form/${f.id}`)}></s-button>
+                                                        <s-button icon="paste" onClick={() => copytoclipboard(f.id)}></s-button>
                                                     </span>
                                                 </s-stack>
 

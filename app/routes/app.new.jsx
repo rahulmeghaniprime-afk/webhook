@@ -252,7 +252,7 @@ function generateFormHtmlAndCss(formId, title, description, fields, buttonLabel,
 // 3. REMIX / REACT ROUTER LOADER
 // ============================================================================
 export const loader = async ({ request }) => {
-    const { session } = await authenticate.admin(request);
+    const { session, redirect } = await authenticate.admin(request);
     const url = new URL(request.url);
     const formName = url.searchParams.get('name') || 'New B2B Form';
 
@@ -263,6 +263,29 @@ export const loader = async ({ request }) => {
     });
 
     const customerTagOptions = [...new Set(tagRows.map((row) => row.tag).filter(Boolean))];
+    
+    const forms = await db.form.findMany({
+        where: { shop: session.shop },
+        include: {
+            FieldMapping: true,
+            formSubmissions: {
+                orderBy: { createdAt: "desc" },
+                select: {
+                    id: true,
+                    customerId: true,
+                    status: true,
+                    createdAt: true,
+                    metaobjectId: true,
+                    payload: true,
+                },
+            },
+        },
+        orderBy: { createdAt: "desc" },
+    });
+    if(forms.length >= 10){
+        return redirect("/app/form");
+    }
+    
 
     return { formName, customerTagOptions };
 };
@@ -1125,7 +1148,7 @@ export default function New() {
                             onClick={handleSaveForm}
                             loading={isSaving ? true : false}
                         >
-                            {isSaving ? "Saving Form..." : "Save Form"}
+                            {isSaving ? "Save Form" : "Save Form"}
                         </s-button>
                     </s-box>
                 </s-section>
