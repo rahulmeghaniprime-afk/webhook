@@ -1,6 +1,6 @@
-﻿import { useLoaderData, useNavigate } from "react-router";
+﻿import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import db from "../db.server";
 
 // ============================================================================
@@ -114,7 +114,7 @@ function getPayloadNameFields(payload) {
 
 export const action = async ({ request, params }) => {
     try {
-        const { admin } = await authenticate.admin(request);
+        const { session, admin } = await authenticate.admin(request);
         const formData = await request.formData();
         const intent = (formData.get("intent") || "").toString();
         const submissionId = (formData.get("submissionId") || "").toString();
@@ -128,7 +128,7 @@ export const action = async ({ request, params }) => {
             include: { form: true },
         });
 
-        if (!submission) {
+        if (!submission || submission.form.shop !== session.shop || submission.formId !== params.formId) {
             return Response.json({ success: false, error: "Submission not found." }, { status: 404 });
         }
 
@@ -258,77 +258,32 @@ export default function FormSubmissions() {
 
     const [sortOrder, setSortOrder] = useState("latest");
     const [selectedSub, setSelectedSub] = useState(null);
-    const [actioningId, setActioningId] = useState(null);
+    const submissionFetcher = useFetcher();
+    const actioningId = submissionFetcher.state !== "idle"
+        ? submissionFetcher.formData?.get("submissionId")
+        : null;
+    const actioningIntent = submissionFetcher.state !== "idle"
+        ? submissionFetcher.formData?.get("intent")
+        : null;
 
-    const handleSubmissionAction = async (submissionId, intent) => {
-        const isApprove = intent === "approve";
-        setActioningId(`${intent}:${submissionId}`);
+    const handleSubmissionAction = (submissionId, intent) => {
+        if (submissionFetcher.state !== "idle") return;
 
-        try {
-            const formData = new FormData();
-            formData.append("intent", intent);
-            formData.append("submissionId", submissionId);
-
-            // Use explicit path construction instead of window.location.pathname
-            const currentUrl = new URL(window.location.href);
-            const actionPath = currentUrl.pathname;
-
-            const res = await fetch(actionPath, {
-                method: "POST",
-                body: formData,
-            });
-
-            let payload = {};
-            try {
-                payload = await res.json();
-            } catch (parseErr) {
-                console.error("Failed to parse response JSON:", parseErr);
-                console.error("Response status:", res.status);
-                console.error("Response ok:", res.ok);
-                payload = {};
-            }
-
-            console.log("[Submission Action] Status:", res.status, "OK:", res.ok, "Payload:", payload);
-
-            // Validate success: HTTP 200 + explicit success flag
-            const isSuccess = res.status === 200 && payload?.success === true;
-            
-            if (!isSuccess) {
-                const serverError =
-                    typeof payload?.error === "string"
-                        ? payload.error
-                        : Array.isArray(payload?.error)
-                            ? payload.error.join(", ")
-                            : typeof payload?.message === "string"
-                                ? payload.message
-                                : null;
-
-                console.error("[Submission Action] Failed with payload:", { status: res.status, ok: res.ok, success: payload?.success, error: serverError, payload });
-                throw new Error(serverError || `Unable to ${isApprove ? "approve" : "reject"} submission.`);
-            }
-
-            // Success: show appropriate toast and reload
-            console.log("[Submission Action] Success - Showing toast and reloading");
-            if (typeof shopify !== "undefined" && shopify.toast) {
-                shopify.toast.show(
-                    isApprove
-                        ? "Submission approved and customer created."
-                        : "Submission rejected and removed."
-                );
-            }
-
-            // Give toast time to show before reload
-            setTimeout(() => window.location.reload(), 500);
-        } catch (error) {
-            const message = error?.message || "This submission could not be processed.";
-            console.error("[Submission Action] Exception caught:", error);
-            if (typeof shopify !== "undefined" && shopify.toast) {
-                shopify.toast.show(message);
-            }
-        } finally {
-            setActioningId(null);
-        }
+        submissionFetcher.submit(
+            { intent, submissionId },
+            { method: "POST" }
+        );
     };
+
+    useEffect(() => {
+        if (submissionFetcher.state !== "idle" || !submissionFetcher.data) return;
+
+        const { success, message, error } = submissionFetcher.data;
+        shopify.toast.show(success
+            ? message || "Submission updated successfully."
+            : error || "This submission could not be processed."
+        );
+    }, [submissionFetcher.state, submissionFetcher.data]);
 
     const sorted = useMemo(() => {
         const copy = [...submissions];
@@ -495,23 +450,24 @@ export default function FormSubmissions() {
                                                         <s-button
                                                             variant="primary"
                                                             size="slim"
-                                                            disabled={actioningId === `approve:${sub.id}`}
-                                                            loading={actioningId === `approve:${sub.id}` ? true : false}
+                                                            disabled={actioningId !== null}
+                                                            loading={actioningId === sub.id && actioningIntent === "approve"}
                                                             onClick={() => handleSubmissionAction(sub.id, "approve")}
                                                         >
-                                                            {actioningId === `approve:${sub.id}` ? "Approve" : "Approve"}
+                                                            {actioningId === sub.id && actioningIntent === "approve" ? "Approving..." : "Approve"}
                                                         </s-button>
                                                         <s-button
                                                             variant="secondary"
                                                             size="slim"
-                                                            disabled={actioningId === `reject:${sub.id}`}
+                                                            disabled={actioningId !== null}
                                                             onClick={() => handleSubmissionAction(sub.id, "reject")}
                                                         >
-                                                            {actioningId === `reject:${sub.id}` ? "Rejecting..." : "Reject"}
+                                                            {actioningId === sub.id && actioningIntent === "reject" ? "Rejecting..." : "Reject"}
                                                         </s-button>
                                                         <s-button
                                                             variant="secondary"
                                                             size="slim"
+                                                            disabled={actioningId !== null}
                                                             onClick={() => openDetail(sub)}
                                                         >
                                                             Detail
@@ -572,6 +528,7 @@ export default function FormSubmissions() {
                                         : val === null || val === undefined
                                             ? "—"
                                             : String(val);
+                                    const matchingStoreTag = storeTags.find((storeTag) => storeTag.tag === displayVal);
 
                                     return (
                                         <s-box
@@ -590,7 +547,7 @@ export default function FormSubmissions() {
                                                             <span style={{ fontSize: "13px", wordBreak: "break-word" }}>
                                                                 <span>{displayVal}</span>
                                                             </span>
-                                                            {(storeTags.find(myObj => myObj.tag === displayVal).market) ? (<span style={{display:"flex",flexWrap:'wrap', gap: '8px'}}><span style={{fontSize: '10px'}}>market: {storeTags.find(myObj => myObj.tag === displayVal).market}</span> <span style={{fontSize: '10px'}}>catalog: {storeTags.find(myObj => myObj.tag === displayVal).catalog}</span></span>) : (displayVal)}
+                                                            {matchingStoreTag?.market ? (<span style={{display:"flex",flexWrap:'wrap', gap: '8px'}}><span style={{fontSize: '10px'}}>market: {matchingStoreTag.market}</span> <span style={{fontSize: '10px'}}>catalog: {matchingStoreTag.catalog}</span></span>) : null}
                                                         </>
                                                     ) : (
                                                         <>
@@ -598,7 +555,7 @@ export default function FormSubmissions() {
                                                                 {label}:
                                                             </span>
                                                             <span style={{ fontSize: "13px", wordBreak: "break-word" }}>
-                                                                {(displayVal.startsWith('https://cdn.shopify.com')) ? ((displayVal.split(',').length === 1) ? (<s-link href={displayVal} target="_blank">{displayVal}</s-link>) : (displayVal.split(',').map(link_dv => <s-link href={link_dv} target="_blank">{link_dv}</s-link>))) : (displayVal || "—")}
+                                                                {(displayVal.startsWith('https://cdn.shopify.com')) ? ((displayVal.split(',').length === 1) ? (<s-link href={displayVal} target="_blank">{displayVal}</s-link>) : (displayVal.split(',').map(link_dv => <s-link key={link_dv} href={link_dv} target="_blank">{link_dv}</s-link>))) : (displayVal || "—")}
                                                             </span>
                                                         </>
                                                     )
