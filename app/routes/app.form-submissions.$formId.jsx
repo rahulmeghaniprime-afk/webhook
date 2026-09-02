@@ -454,15 +454,16 @@ export default function FormSubmissions() {
                                                             loading={actioningId === sub.id && actioningIntent === "approve"}
                                                             onClick={() => handleSubmissionAction(sub.id, "approve")}
                                                         >
-                                                            {actioningId === sub.id && actioningIntent === "approve" ? "Approving..." : "Approve"}
+                                                            {actioningId === sub.id && actioningIntent === "approve" ? "Approve" : "Approve"}
                                                         </s-button>
                                                         <s-button
                                                             variant="secondary"
                                                             size="slim"
                                                             disabled={actioningId !== null}
+                                                            loading={actioningId === sub.id && actioningIntent === "reject"}
                                                             onClick={() => handleSubmissionAction(sub.id, "reject")}
                                                         >
-                                                            {actioningId === sub.id && actioningIntent === "reject" ? "Rejecting..." : "Reject"}
+                                                            {actioningId === sub.id && actioningIntent === "reject" ? "Reject" : "Reject"}
                                                         </s-button>
                                                         <s-button
                                                             variant="secondary"

@@ -35,10 +35,11 @@ export const loader = async ({ request }) => {
 // ACTION — handle form deletion
 // ============================================================================
 export const action = async ({ request }) => {
-    const { session, admin } = await authenticate.admin(request);
+    const { session, admin, redirect } = await authenticate.admin(request);
     const data = await request.formData();
     const intent = data.get("intent");
     const formId = data.get("formId");
+    const formUrl = data.get("formUrl");
 
     if (intent === "deleteForm" && formId) {
         try {
@@ -85,6 +86,9 @@ export const action = async ({ request }) => {
             return Response.json({ success: false, error: err?.message || "Delete failed." }, { status: 500 });
         }
     }
+    if(intent === "previewForm" && formUrl){
+        return redirect(formUrl, {target: "_blank"});
+    }
 
     return Response.json({ success: false, error: "Unknown intent." }, { status: 400 });
 };
@@ -119,7 +123,8 @@ function statusLabel(status) {
 // COMPONENT
 // ============================================================================
 export default function Form() {
-    const { forms = [] } = useLoaderData();
+    const { shop, forms = [] } = useLoaderData();
+    console.log(shop)
     const navigate = useNavigate();
     const location = useLocation();
     const fetcher = useFetcher();
@@ -153,6 +158,14 @@ export default function Form() {
     };
 
     const isDeleting = fetcher.state !== "idle";
+    const handlePreviewLink = (url) => {
+        if(!url) return;
+        // const fd = new FormData();
+        // fd.append("intent", "previewForm");
+        // fd.append("formUrl", url);
+        // fetcher.submit(fd, {method: "POST"});
+        window.top.location.href = url;
+    }
 
     return (
         <>
@@ -185,7 +198,7 @@ export default function Form() {
                                 return (
                                     <s-box key={f.id} border="base" borderRadius="base" padding="none">
                                         {/* ── Form header row ── */}
-                                        <s-box padding="base" style={{ background: "#fafbfc", borderRadius: "6px" }}>
+                                        <s-box padding="base">
                                             <s-stack direction="inline" alignItems="center" justifyContent="space-between" gap="base">
                                                 {/* Left: form info */}
                                                 <s-stack direction="block" gap="tight">
@@ -201,14 +214,25 @@ export default function Form() {
                                                     </s-stack>
                                                     <s-paragraph tone="subdued">
                                                         <small>
-                                                            <code style={{ fontSize: "11px" }}>{f.id}</code>
-                                                            &nbsp;·&nbsp;Created {formatDate(f.createdAt)}
+                                                            ·&nbsp;Created {formatDate(f.createdAt)}
                                                         </small>
                                                     </s-paragraph>
+                                                    <span style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
+                                                        Form Link: <code style={{ fontSize: "11px" }}>/apps/wholesale-form/{f.id}</code>
+                                                        <s-button icon="paste" onClick={() => navigator.clipboard.writeText(`https://${shop}/apps/wholesale-form/${f.id}`)}></s-button>
+                                                    </span>
                                                 </s-stack>
 
                                                 {/* Right: actions */}
                                                 <s-stack direction="inline" gap="small" alignItems="center">
+                                                    <s-button
+                                                        icon="view"
+                                                        variant="plain"
+                                                        tone="auto"
+                                                        onClick={()=>handlePreviewLink(`https://${shop}/apps/wholesale-form/${f.id}`)}
+
+                                                        disabled={isDeleting}
+                                                    />
                                                     {submissions.length > 0 && (
                                                         <s-button
                                                             variant="secondary"
