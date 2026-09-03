@@ -7,6 +7,7 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+# read_customers,write_customers,read_markets,write_markets,read_catalogs,write_catalogs,read_companies,write_companies,read_metaobjects,write_metaobjects,read_metafields,write_metafields,read_files,write_files
 scopes = "read_customers,write_customers,write_products,write_metaobjects,write_metaobject_definitions,write_payment_customizations,write_markets,write_app_proxy,write_files,read_files"
 
 [product.metafields.app.demo_info]

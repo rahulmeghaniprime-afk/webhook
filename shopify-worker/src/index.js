@@ -108,50 +108,90 @@ async function getCompanyContactRoleId(shopDomain, accessToken, companyId, roleN
 
 async function companyCreate(shopDomain, accessToken, customerId, market_catalog) {
 
-  // 1) companyCreate as you already have
-  const companyCreateQuery = `
-    mutation CompanyCreateWithLocation($input: CompanyCreateInput!) {
-      companyCreate(input: $input) {
-        company {
-          id
-          name
-          locations(first: 3) {
-            edges {
-              node {
-                id
-                name
-                buyerExperienceConfiguration {
-                  editableShippingAddress
+  try {
+
+    const customerQuery = `
+      query GetCustomer($id: ID!){
+        customer(id:$id){
+          firstName
+          lastName
+          metafield(namespace:"app--392082358273", key: "company_name"){
+            value
+            jsonValue
+          }
+        }
+      }
+    `;
+
+    const customerVariable = {
+      id: customerId
+    }
+
+    const customerRes = await fetch(
+      `https://${shopDomain}/admin/api/2026-07/graphql.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': accessToken
+        },
+        body: JSON.stringify({
+          query: customerQuery,
+          variables: customerVariable
+        })
+      }
+    );
+
+    const customerDR = await customerRes.json();
+    const custErrors = customerDR?.data?.customer?.userErrors;
+    if (custErrors && custErrors.length > 0) {
+      console.error('Get Customer userErrors:', custErrors);
+      return;
+    }
+    const companyName = customerDR.data.customer?.metafield?.jsonValue || `${customerDR.data.customer.firstName} ${customerDR.data.customer.lastName}` || 'B2B';
+
+    // 1) companyCreate as you already have
+    const companyCreateQuery = `
+      mutation CompanyCreateWithLocation($input: CompanyCreateInput!) {
+        companyCreate(input: $input) {
+          company {
+            id
+            name
+            locations(first: 3) {
+              edges {
+                node {
+                  id
+                  name
+                  buyerExperienceConfiguration {
+                    editableShippingAddress
+                  }
                 }
               }
             }
           }
-        }
-        userErrors {
-          field
-          message
-          code
-        }
-      }
-    }
-  `;
-
-  const companyCreateVariables = {
-    input: {
-      company: {
-        name: "B2B",
-        externalId: customerId,
-      },
-      companyLocation: {
-        name: "B2B Company Location",
-        buyerExperienceConfiguration: {
-          editableShippingAddress: true
+          userErrors {
+            field
+            message
+            code
+          }
         }
       }
-    }
-  };
+    `;
 
-  try {
+    const companyCreateVariables = {
+      input: {
+        company: {
+          name: companyName,
+          externalId: customerId,
+        },
+        companyLocation: {
+          name: companyName,
+          buyerExperienceConfiguration: {
+            editableShippingAddress: true
+          }
+        }
+      }
+    };
     // --- Step 1: create company + location ---
     const createRes = await fetch(
       `https://${shopDomain}/admin/api/2026-07/graphql.json`,

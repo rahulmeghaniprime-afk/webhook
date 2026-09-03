@@ -7,7 +7,7 @@ export const action = async ({ request }) => {
         query {
         shop {
             metafield(namespace: "custom", key: "store_tags") {
-            jsonValue
+                jsonValue
             }
         }
         }
